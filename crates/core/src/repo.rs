@@ -9,13 +9,16 @@ use std::str::FromStr;
 
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
+use crate::crypto::{DeviceKey, GroupKey};
 use crate::error::{CoreError, Result};
+use crate::keystore::{self, SqliteKeyStore};
+use crate::log::EventLog;
 use crate::model::{Baby, Caregiver, Entry, Millis, Role};
 use crate::sync::{self, Cursor};
 use crate::validate::now_millis;
 
 /// Bumped whenever the schema below changes; see [`Repo::migrate`].
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 4;
 
 const ENTRY_COLUMNS: &str = "id, baby_id, kind, occurred_at, ended_at, feed_kind, amount, \
      amount_unit, diaper_type, pee_shade, pee_amount, poop_color, consistency, poop_amount, \
@@ -90,6 +93,51 @@ CREATE TABLE IF NOT EXISTS invites (
 );
 "#;
 
+/// The append-only event log — the source of truth the rest of the schema is
+/// projected from. Nothing here is ever updated or deleted.
+const SCHEMA_V2: &str = r#"
+CREATE TABLE IF NOT EXISTS events (
+  id         TEXT PRIMARY KEY,
+  topic      TEXT NOT NULL,
+  author     TEXT NOT NULL,
+  wall_ms    INTEGER NOT NULL,
+  counter    INTEGER NOT NULL,
+  node       TEXT NOT NULL,
+  kind       TEXT NOT NULL,
+  nonce      BLOB NOT NULL,
+  payload    BLOB NOT NULL,
+  signature  BLOB NOT NULL
+);
+
+-- Merge order, and the scan anti-entropy does.
+CREATE INDEX IF NOT EXISTS idx_events_hlc ON events(wall_ms, counter, node);
+-- One range per author, for catching a peer up.
+CREATE INDEX IF NOT EXISTS idx_events_author ON events(author, wall_ms, counter, node);
+CREATE INDEX IF NOT EXISTS idx_events_topic ON events(topic, wall_ms, counter, node);
+"#;
+
+/// This device's identity: one row, generated on first open, never replicated
+/// and never leaving the device. There is no login, so this *is* the account.
+const SCHEMA_V3: &str = r#"
+CREATE TABLE IF NOT EXISTS device_keys (
+  id     INTEGER PRIMARY KEY CHECK (id = 1),
+  secret BLOB NOT NULL
+);
+"#;
+
+/// Events name the entry they are about, so the projection can group them (and
+/// a peer can filter) without the group key. Added by `ALTER` rather than by
+/// editing V2, so a database created by an older build gets it the same way.
+const SCHEMA_V4: &str = r#"
+ALTER TABLE events ADD COLUMN entry_id TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_events_entry ON events(entry_id, wall_ms, counter, node);
+
+CREATE TABLE IF NOT EXISTS group_keys (
+  topic TEXT PRIMARY KEY,
+  key   BLOB NOT NULL
+);
+"#;
+
 /// An invite link waiting to be redeemed.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Invite {
@@ -146,12 +194,26 @@ impl Repo {
     }
 
     /// Apply any pending schema migrations (`PRAGMA user_version`).
+    ///
+    /// Each step is applied in order, so a database created by an older build
+    /// catches up rather than being recreated.
     fn migrate(&self) -> Result<()> {
         let version: i64 = self
             .conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))?;
         if version < 1 {
             self.conn.execute_batch(SCHEMA_V1)?;
+        }
+        if version < 2 {
+            self.conn.execute_batch(SCHEMA_V2)?;
+        }
+        if version < 3 {
+            self.conn.execute_batch(SCHEMA_V3)?;
+        }
+        if version < 4 {
+            self.conn.execute_batch(SCHEMA_V4)?;
+        }
+        if version < SCHEMA_VERSION {
             self.conn
                 .execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION};"))?;
         }
@@ -160,6 +222,55 @@ impl Repo {
 
     pub fn connection(&self) -> &Connection {
         &self.conn
+    }
+
+    /// The append-only log this database's projection is built from.
+    pub fn log(&self) -> EventLog<'_> {
+        EventLog::new(&self.conn)
+    }
+
+    /// This device's identity: loaded on later launches, generated on the first.
+    ///
+    /// There is no login — see [`crate::keystore`] for what that means when the
+    /// key is lost.
+    pub fn device_key(&self) -> Result<DeviceKey> {
+        keystore::device_key(&SqliteKeyStore::new(&self.conn))
+    }
+
+    /* ------------------------------------------------------------ group keys */
+
+    /// The group key for a baby, as handed over by whatever invited this device.
+    ///
+    /// Kept beside the log the same way the log's payloads are sealed with it —
+    /// without it this device can read headers but not one entry.
+    pub fn group_key(&self, topic: &str) -> Result<Option<GroupKey>> {
+        let stored: Option<Vec<u8>> = self
+            .conn
+            .query_row(
+                "SELECT key FROM group_keys WHERE topic = ?1",
+                params![topic],
+                |row| row.get(0),
+            )
+            .optional()?;
+
+        match stored {
+            None => Ok(None),
+            Some(bytes) => bytes
+                .try_into()
+                .map(|key| Some(GroupKey::from_bytes(key)))
+                .map_err(|_| CoreError::data("the stored group key is not 32 bytes")),
+        }
+    }
+
+    /// Store the group key for a baby: when this device creates one, or when it
+    /// redeems an invite.
+    pub fn save_group_key(&self, topic: &str, key: &GroupKey) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO group_keys (topic, key) VALUES (?1, ?2)
+             ON CONFLICT(topic) DO UPDATE SET key = excluded.key",
+            params![topic, &key.to_bytes()[..]],
+        )?;
+        Ok(())
     }
 
     /* ------------------------------------------------------------------ baby */
@@ -337,6 +448,9 @@ impl Repo {
                 note = excluded.note,
                 photo = excluded.photo,
                 caregiver_id = excluded.caregiver_id,
+                -- `created_at` is derived (the earliest write), so a later
+                -- arrival of an older event has to be able to move it back.
+                created_at = excluded.created_at,
                 updated_at = excluded.updated_at,
                 deleted = excluded.deleted",
             params![
@@ -693,7 +807,7 @@ fn entry_from_row(row: &Row<'_>) -> rusqlite::Result<Entry> {
     })
 }
 
-fn parse_req<T>(value: String, column: usize) -> rusqlite::Result<T>
+pub(crate) fn parse_req<T>(value: String, column: usize) -> rusqlite::Result<T>
 where
     T: FromStr<Err = CoreError>,
 {
@@ -712,6 +826,6 @@ where
     }
 }
 
-fn conversion_error(column: usize, error: CoreError) -> rusqlite::Error {
+pub(crate) fn conversion_error(column: usize, error: CoreError) -> rusqlite::Error {
     rusqlite::Error::FromSqlConversionFailure(column, rusqlite::types::Type::Text, Box::new(error))
 }

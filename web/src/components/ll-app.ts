@@ -1,14 +1,11 @@
 import { defineComponent, LLComponent } from "../core/component";
-import { focusInside } from "../core/dom";
 import { LL, ui } from "../core/ui-store";
-import type { AuthRequest, OpenEntryDetail } from "../core/ui-store";
+import type { OpenEntryDetail } from "../core/ui-store";
 import { store } from "../data/store";
-import type { Session, TabName } from "../data/model";
-import type { LlAuth } from "./screens/ll-auth";
+import type { TabName } from "../data/model";
 import "./ll-app.css";
 import "./ui/ll-sheet-host";
 import "./ui/ll-tabs";
-import "./screens/ll-auth";
 import "./screens/ll-today";
 import "./screens/ll-history";
 import "./screens/ll-trends";
@@ -26,19 +23,17 @@ const SCREEN_TAGS: Record<TabName, string> = {
 };
 
 /**
- * Composition root. Owns the two top-level views — the sign-in screen and the
- * four-tab app — plus the tab bar and the sheet host, routes the events the
- * components emit, and keeps the theme in sync with the baby's preference.
- * Boot and the 401 hook live in main.ts.
+ * Composition root. Owns the four screens, the tab bar and the sheet host,
+ * routes the events the components emit, and keeps the theme in sync with the
+ * baby's preference. Boot lives in main.ts.
+ *
+ * There is no sign-in screen: a device's key *is* its identity (see
+ * `little_log_core::keystore`), so the app opens straight onto Today.
  */
 export class LlApp extends LLComponent {
-  /** The last `ui.auth` request the sign-in screen was configured with. */
-  private lastAuth: AuthRequest | null = null;
-
   protected template(): string {
     return `
       <div class="splash" data-role="splash"><span>Little Log</span></div>
-      <ll-auth hidden></ll-auth>
       <ll-today></ll-today>
       <ll-history hidden></ll-history>
       <ll-trends hidden></ll-trends>
@@ -54,9 +49,6 @@ export class LlApp extends LLComponent {
       const { id } = (event as CustomEvent<OpenEntryDetail>).detail;
       ui.openSheet({ name: "detail", entryId: id });
     });
-    this.on(this, LL.signedIn, (event) => {
-      void this.signedIn((event as CustomEvent<{ session: Session }>).detail.session);
-    });
   }
 
   protected override subscribe(): void {
@@ -66,51 +58,17 @@ export class LlApp extends LLComponent {
     this.syncViews();
   }
 
-  /* ------------------------------------------------------------- actions */
-
-  private async signedIn(session: Session): Promise<void> {
-    const invited = !!ui.auth?.invite;
-    store.adoptSession(session);
-    if (invited) {
-      // The invite is spent; keep it out of the address bar.
-      try {
-        history.replaceState({}, "", location.pathname);
-      } catch {
-        /* history unavailable — harmless */
-      }
-    }
-    ui.hideAuth();
-    ui.go("today");
-    await store.refresh();
-  }
-
-  /**
-   * Show exactly one top-level view: the splash until boot finishes, then
-   * either the sign-in screen or the active tab.
-   */
+  /** Show the splash until boot finishes, then exactly one screen. */
   private syncViews(): void {
-    const request = ui.auth;
-    const authing = ui.booted && !!request;
-
-    const auth = this.querySelector<LlAuth>("ll-auth");
-    if (auth) {
-      // Re-configure only when the request changes, so typing survives a notify.
-      if (request !== this.lastAuth && request) auth.configure(request);
-      this.lastAuth = request;
-      const wasHidden = auth.hidden;
-      auth.hidden = !authing;
-      if (authing && wasHidden) focusInside(auth, "input");
-    }
-
     const splash = this.querySelector<HTMLElement>('[data-role="splash"]');
     if (splash) splash.hidden = ui.booted;
 
     const tabs = this.querySelector<HTMLElement>("ll-tabs");
-    if (tabs) tabs.hidden = authing || !ui.booted;
+    if (tabs) tabs.hidden = !ui.booted;
 
     for (const [name, tag] of Object.entries(SCREEN_TAGS)) {
       const screen = this.querySelector<HTMLElement>(tag);
-      if (screen) screen.hidden = authing || !ui.booted || name !== ui.tab;
+      if (screen) screen.hidden = !ui.booted || name !== ui.tab;
     }
   }
 

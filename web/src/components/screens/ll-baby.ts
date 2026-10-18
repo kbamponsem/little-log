@@ -2,7 +2,7 @@ import { defineComponent, LLComponent } from "../../core/component";
 import { ui } from "../../core/ui-store";
 import type { InviteRole } from "../../core/ui-store";
 import type { Baby, Caregiver } from "../../data/model";
-import { INVITE_ROLES, ROLE_LABELS, THEMES } from "../../data/model";
+import { INVITE_ROLES, THEMES } from "../../data/model";
 import { store } from "../../data/store";
 import { esc } from "../../format";
 import { LlCaregiverRow } from "../ui/ll-caregiver-row";
@@ -40,7 +40,6 @@ export class LlBaby extends LLComponent {
         </div>
         <p class="note">Everything is stored on this device; it syncs to your server when you are signed in.</p>
       </ll-card>
-      ${accountCard()}
     `;
   }
 
@@ -74,7 +73,6 @@ export class LlBaby extends LLComponent {
       if (action === "invite") void this.invite(event);
       if (action === "export") void this.export(event);
       if (action === "delete-all") void this.deleteAll(event);
-      if (action === "sign-out") void this.signOut();
     });
 
     this.addEventListener("ll-change", (event) => {
@@ -181,24 +179,6 @@ export class LlBaby extends LLComponent {
       button.textContent = "Failed — try again";
     }
   }
-
-  /** Sign out on the server, then hand the view back to the sign-in screen. */
-  private async signOut(): Promise<void> {
-    await store.signOut();
-    ui.showAuth({ mode: "login", invite: null });
-  }
-}
-
-/** The signed-in user's name, role and sign-out control. Hidden when local-only. */
-function accountCard(): string {
-  const user = store.user;
-  if (!user) return "";
-  return `
-    <ll-card class="card" heading="Account">
-      <div class="cg"><span>${esc(user.name)}</span><span>${esc(ROLE_LABELS[user.role])}</span></div>
-      <button class="chip sign-out" type="button" data-action="sign-out">Sign out</button>
-    </ll-card>
-  `;
 }
 
 defineComponent("ll-baby", LlBaby);

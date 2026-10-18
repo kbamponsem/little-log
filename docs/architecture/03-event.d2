@@ -1,0 +1,40 @@
+title: |md
+  # One event, on the wire
+  Headers stay readable so a peer can sync without the group key. The signature covers the headers **and** the ciphertext, so a relaying peer cannot re-attribute, re-time or edit an event.
+| {near: top-center}
+
+direction: right
+
+event: "Event — immutable once written" {
+  direction: down
+
+  headers: "Readable headers — signed, and used as AEAD associated data\n\nid  ·  UUIDv7, made on the authoring device\ntopic  ·  which baby\nauthor  ·  the device's ed25519 public key, hex\nhlc  ·  (wall_ms, counter, node)\nkind  ·  create / edit / delete / sleep_start / sleep_stop\nnonce  ·  24 random bytes" {
+    shape: rectangle
+  }
+
+  payload: "payload — sealed with the baby's group key\nXChaCha20-Poly1305" {
+    shape: rectangle
+  }
+
+  signature: "signature — ed25519 over\nheaders ‖ nonce ‖ ciphertext" {
+    shape: rectangle
+  }
+}
+
+relaying_peer: "A peer that relays but is not a member\nsees the headers, cannot open the payload" {
+  shape: person
+}
+member: "A member holding the group key" {
+  shape: person
+}
+
+relaying_peer -> event.headers: "reads: route + verify"
+member -> event.payload: "opens with the group key"
+event.signature -> relaying_peer: "verifies — the author id *is* the public key,\nso there is no key directory to trust"
+
+forgery: |md
+  **Why the signature covers the headers:** re-attributing, re-timing or
+  re-classifying an event changes `signing_bytes()`, so the signature no longer
+  verifies. Signatures are checked on the way into the log, so one bad event
+  cannot poison a device that later syncs from it.
+| {shape: text; near: bottom-center}

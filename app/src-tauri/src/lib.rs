@@ -115,11 +115,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            commands::auth_status,
-            commands::auth_me,
-            commands::auth_register,
-            commands::auth_login,
-            commands::auth_logout,
+            commands::device_identity,
             commands::list_entries,
             commands::save_entry,
             commands::delete_entry,

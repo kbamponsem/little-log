@@ -7,7 +7,10 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+chacha20poly1305.workspace = true
 chrono.workspace = true
+ed25519-dalek.workspace = true
+getrandom.workspace = true
 image.workspace = true
 rusqlite.workspace = true
 serde.workspace = true

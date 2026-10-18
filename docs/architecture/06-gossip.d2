@@ -1,0 +1,17 @@
+title: |md
+  # Gossip fan-out — one event, no server
+  A caregiver taps the widget. The event is signed and sealed locally, then gossiped to every reachable peer on the baby's topic. Anti-entropy later closes any gap the gossip missed.
+| {near: top-center}
+
+direction: right
+
+phone: "Parent phone\nauthors the event" {shape: rectangle}
+laptop: "Parent laptop" {shape: rectangle}
+tablet: "Grandparent tablet" {shape: rectangle}
+alwayson: "Always-on peer" {shape: cylinder}
+
+phone -> laptop: "gossip"
+phone -> tablet: "gossip"
+laptop -> alwayson: "gossip"
+tablet -> alwayson: "gossip"
+alwayson -> phone: "anti-entropy\ncloses any gap"

@@ -1,0 +1,33 @@
+title: |md
+  # Convergence — one register per entry
+  Merge is **set union of events**. Each entry id is a single last-writer-wins register over the whole entry state (payload *and* tombstone), ordered by `(hlc, author)`. Edits and deletes compete in the same register, so a delete cannot be resurrected and the states cannot oscillate.
+| {near: top-center}
+
+direction: right
+
+phone: "Phone replica (before sync)" {
+  local: "e-42\nevent A · edit\nauthor = phone\nhlc = (1000, 0, phone)" {
+    shape: rectangle
+  }
+}
+
+tablet: "Tablet replica (before sync)" {
+  local: "e-42\nevent B · delete (tombstone)\nauthor = tablet\nhlc = (1002, 0, tablet)" {
+    shape: rectangle
+  }
+}
+
+converged: "Both replicas agree\ne-42 → deleted" {
+  shape: oval
+}
+
+phone.local -> converged: "inserts B\n(B > A)"
+tablet.local -> converged: "already holds B;\nA is stale, ignored"
+
+note: |md
+  **Ties.** Two devices ticking in the same millisecond with the same counter produce equal HLCs.
+  The winner is then the one with the smaller author key **bytes** — a rule every device applies
+  identically. Arrival order is *never* a tie-breaker.
+
+  A `delete` of everything is just one tombstone per entry — the same register, applied to each id.
+| {shape: text; near: bottom-center}

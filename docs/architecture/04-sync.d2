@@ -1,0 +1,20 @@
+title: |md
+  # Sync — anti-entropy, then live gossip
+  On every connection and at app start, two peers reconcile the gap. Live gossip keeps them in step afterwards; it is lossy and unordered, so it is never the correctness guarantee.
+| {near: top-center}
+
+shape: sequence_diagram
+
+phone: Phone
+tablet: Tablet
+
+phone -> tablet: "connect — QUIC (mDNS · hole punch · relay)"
+phone -> tablet: "heads() — the newest HLC I have per device"
+tablet -> phone: "heads()"
+phone -> tablet: "missing(your heads) — only the gap"
+tablet -> phone: "missing(your heads) — only the gap"
+phone -> phone: "verify every signature, then insert (set union)"
+tablet -> tablet: "verify every signature, then insert (set union)"
+phone -> tablet: "live gossip: new events, per baby topic"
+phone -> phone: "fold the log into the SQLite projection"
+tablet -> tablet: "fold the log into the SQLite projection"

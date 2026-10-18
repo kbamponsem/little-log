@@ -20,16 +20,13 @@ fn fail(error: CoreError) -> String {
     error.to_string()
 }
 
-/// What `auth_me` hands the frontend: who is using this device, and the baby.
+/// What `device_identity` hands the frontend: this device's id.
+///
+/// There is no login. The id is the hex of the device's ed25519 public key,
+/// generated the first time the app opens — see `little_log_core::keystore`.
 #[derive(Serialize)]
-pub struct Session {
-    pub user: Caregiver,
-    pub baby: Baby,
-}
-
-#[derive(Serialize)]
-pub struct Status {
-    pub needs_setup: bool,
+pub struct Identity {
+    pub id: String,
 }
 
 #[derive(Serialize)]
@@ -46,56 +43,16 @@ pub struct SyncReport {
     pub message: String,
 }
 
-/* ------------------------------------------------------------------- auth */
+/* --------------------------------------------------------------- identity */
 
-/// The app always has a local profile, so setup is never "needed".
+/// This device's identity — no login, no account, no password.
+///
+/// Generated on first open and kept on the device; every event it authors is
+/// signed with the matching key.
 #[tauri::command]
-pub fn auth_status() -> Status {
-    Status { needs_setup: false }
-}
-
-#[tauri::command]
-pub fn auth_me(state: State<'_, AppState>) -> CmdResult<Session> {
-    current_session(&state)
-}
-
-/// First run in the app: keep the local profile, remember where the sync
-/// server lives. The password itself only ever goes to that server.
-#[tauri::command]
-pub fn auth_register(
-    state: State<'_, AppState>,
-    name: String,
-    email: String,
-    password: String,
-    invite: Option<String>,
-    server: Option<String>,
-) -> CmdResult<Session> {
-    let _ = (password, invite); // sent to little-log-server in phase 2 sync
-    remember_account(&state, &name, &email, server);
-    current_session(&state)
-}
-
-/// Signing in on the app records the account locally; the server handshake
-/// arrives with `sync_now` (phase 2). Local data is never gated on it.
-#[tauri::command]
-pub fn auth_login(
-    state: State<'_, AppState>,
-    email: String,
-    password: String,
-    server: Option<String>,
-) -> CmdResult<Session> {
-    let _ = password;
-    remember_account(&state, "", &email, server);
-    current_session(&state)
-}
-
-/// Forget the sync account; the log itself stays on the device.
-#[tauri::command]
-pub fn auth_logout(state: State<'_, AppState>) -> CmdResult<()> {
-    let mut settings = state.settings();
-    settings.session_token.clear();
-    state.store_settings(settings);
-    Ok(())
+pub fn device_identity(state: State<'_, AppState>) -> CmdResult<Identity> {
+    let id = state.repo().device_key().map_err(fail)?.id();
+    Ok(Identity { id })
 }
 
 /* ---------------------------------------------------------------- entries */
@@ -149,11 +106,9 @@ pub fn delete_entry(state: State<'_, AppState>, entry_id: String) -> CmdResult<E
 
 #[tauri::command]
 pub fn get_baby(state: State<'_, AppState>) -> CmdResult<Baby> {
-    state
-        .repo()
-        .baby()
-        .map_err(fail)?
-        .ok_or_else(|| "no baby profile yet".to_string())
+    // First run has no profile yet; create the first baby so the app can open
+    // straight onto Today. Renaming happens on the Baby screen.
+    state.repo().ensure_baby("Baby").map_err(fail)
 }
 
 #[tauri::command]
@@ -246,52 +201,4 @@ pub fn sync_now(state: State<'_, AppState>) -> CmdResult<SyncReport> {
             settings.server
         ),
     })
-}
-
-/* ---------------------------------------------------------------- helpers */
-
-fn current_session(state: &AppState) -> CmdResult<Session> {
-    let repo = state.repo();
-    let baby = repo
-        .baby()
-        .map_err(fail)?
-        .ok_or_else(|| "no baby profile yet".to_string())?;
-    let user = repo
-        .caregivers()
-        .map_err(fail)?
-        .into_iter()
-        .next()
-        .ok_or_else(|| "no local profile yet".to_string())?;
-    Ok(Session { user, baby })
-}
-
-fn remember_account(state: &AppState, name: &str, email: &str, server: Option<String>) {
-    let mut settings = state.settings();
-    settings.email = email.trim().to_string();
-    if let Some(server) = server {
-        settings.server = server.trim().to_string();
-    }
-    state.store_settings(settings);
-
-    let repo = state.repo();
-    let Ok(baby) = repo.ensure_baby("Baby") else {
-        return;
-    };
-    let existing = repo
-        .caregivers()
-        .ok()
-        .and_then(|caregivers| caregivers.into_iter().find(|c| c.role == Role::Owner));
-
-    let mut owner = existing.unwrap_or_else(|| {
-        let mut owner = Caregiver::new("You", Role::Owner);
-        owner.baby_id = baby.id.clone();
-        owner
-    });
-    if !name.trim().is_empty() {
-        owner.name = name.trim().to_string();
-    }
-    owner.baby_id = baby.id;
-    owner.email = Some(email.trim().to_string());
-    owner.updated_at = validate::now_millis();
-    let _ = repo.save_caregiver(&owner);
 }

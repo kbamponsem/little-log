@@ -15,6 +15,9 @@ data/
 node_modules/
 web/dist/
 
+# Local diagram tooling (docs/architecture/render.sh installs D2 here)
+.tools/
+
 # Tauri / Android build output (gen/android itself is part of the project)
 app/src-tauri/gen/android/app/build/
 app/src-tauri/gen/android/app/src/main/jniLibs/

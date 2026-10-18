@@ -1,43 +1,27 @@
 /* Little Log — application entry point.
  *
- * Registers the component tree, wires the storage adapter's 401 hook, and
- * decides on boot whether to show the app or the sign-in screen.
+ * Registers the component tree and boots. There is no login: boot resolves this
+ * device's identity, creates the first baby if there is none, and loads the log.
+ * `ll-app` owns everything after that.
  */
 
 import "./styles/index.css";
 // Registers every UI component (custom element + stylesheet)…
 import "./components/ui";
-// …then the app shell, which owns the sign-in screen, the tabs and the sheets.
+// …then the app shell, which owns the screens, tabs and sheets.
 import "./components/ll-app";
 
-import { readInvite } from "./components/screens/ll-auth";
 import { ui } from "./core/ui-store";
-import { repo, store } from "./data/store";
-
-/** `?invite=<token>` from the URL, if any. */
-const invite = readInvite();
-
-/** Any rejected request drops the app back to the sign-in screen. */
-repo.setUnauthorizedHandler(() => {
-  if (!ui.auth) ui.showAuth({ mode: "login", invite: null });
-});
+import { store } from "./data/store";
 
 async function boot(): Promise<void> {
-  let session = null;
   try {
-    session = await repo.me();
-  } catch {
-    session = null;
+    await store.load();
+  } catch (error) {
+    // Show the app rather than sitting on the splash: an empty log the user can
+    // still write to beats a screen that never appears.
+    console.error("Could not load the log", error);
   }
-
-  if (session) {
-    store.adoptSession(session);
-    await store.refresh();
-  } else {
-    // Not signed in: the sign-in screen is the front door.
-    ui.showAuth({ mode: "login", invite });
-  }
-
   ui.markBooted();
 }
 

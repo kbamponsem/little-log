@@ -1,388 +1,197 @@
-# Little Log — Plan, Data Model, Risks
+# Little Log — plan
 
-Open-source, cross-platform baby tracker. Rust core, one codebase, local-first.
-UX/visual source of truth: `Little Log.html` (vanilla HTML/CSS/JS, no build step).
+A local-first baby tracker for feeds, sleep and diapers. Every device holds a
+full replica and works offline; caregivers' devices replicate **directly with
+each other**. There is no central server and no account system.
 
----
+One Rust codebase serves an Android app with a home-screen widget, iOS and
+desktop later, and an optional always-on replica you can run in Docker.
 
-## 1. Architecture at a glance
+## 1. Architecture
 
-```
-baby-tracker/
-├── Cargo.toml               workspace
-├── crates/
-│   ├── core/                little-log-core: models, enums, validation,
-│   │                        SQLite repository (rusqlite), sync logic, CSV, photos
-│   └── server/              little-log-server: axum binary, auth, REST sync,
-│                            serves the web UI, uses little-log-core
-├── web/                     TypeScript web components (custom elements) + Vite
-│   ├── index.html           single `<ll-app>` root
-│   ├── src/
-│   │   ├── main.ts          entry: styles, component registration, boot/401 hook
-│   │   ├── styles/          tokens.css, base.css, index.css (global only)
-│   │   ├── core/            component.ts (LLComponent), dom.ts, observable.ts,
-│   │   │                    sheet.ts (LLSheet), ui-store.ts (UiStore + event names)
-│   │   ├── data/            model.ts, storage.ts (adapters), repository.ts, store.ts
-│   │   ├── format.ts        icons.ts  photo.ts
-│   │   └── components/
-│   │       ├── ll-app.ts    composition root (sign-in screen + screens + tabs + sheets)
-│   │       ├── ui/          one file per component, with its own .css
-│   │       ├── screens/     ll-auth, ll-today, ll-history, ll-trends, ll-baby
-│   │       └── sheets/      feed, diaper, sleep, detail
-│   └── public/fonts/        Caprasimo + Jost (OFL), local @font-face
-├── app/                     Tauri 2 project (Android first, then iOS/desktop)
-│   ├── src-tauri/           Rust commands wrapping little-log-core
-│   └── src-tauri/gen/android/  Kotlin: Glance widget, receiver, WorkManager drain,
-│                               launcher shortcuts
-├── docker/                  multi-stage Dockerfile (cargo-chef), non-root
-├── docker-compose.yml       one service, port 8080, ./data:/data, healthcheck
-├── .github/workflows/ci.yml cargo test/clippy/fmt, APK, server image
-├── README.md  LICENSE (MIT)  PLAN.md
-```
+**Local-first, serverless, gossip replication.**
 
-**Local-first:** the app owns a SQLite file and works 100 % offline. The server is
-an optional sync target; the browser UI (Phase 1) talks to the same REST API the
-app syncs against.
+- Each device keeps a complete copy of the event log and the SQLite projection
+  built from it, so everything works with no network at all.
+- Devices replicate peer to peer: QUIC with hole punching and relay fallback.
+- No central authority, no user accounts, no REST API. Membership and roles are
+  cryptographic, not server-side.
+- An **always-on peer** (headless, built from the same crates) is optional. It
+  holds an encrypted replica and has no special authority — it is just a device
+  that is always reachable.
 
-**Storage adapter contract** (implemented twice, identical interface):
+**Removed from the previous design:** `crates/server` (axum, REST sync, Argon2
+accounts, invite links, sessions) and the browser as a deployment target. The
+`web/` directory survives as the Tauri app's frontend — see §2.
 
-```js
-storage.listEntries()              -> Entry[]
-storage.saveEntry(entry)           -> Entry        // upsert, LWW
-storage.deleteEntry(id)            -> Entry        // soft delete tombstone
-storage.getBaby() / saveBaby(baby)
-storage.listCaregivers() / invite(role) / ...
-storage.savePhoto(entryId, bytes)  -> path
-storage.exportCsv()                -> string
-storage.deleteAll()
-```
+## 2. Workspace
 
-- In the Tauri app: `TauriAdapter` → `invoke('...')` → `little-log-core` (SQLite on device).
-- In the browser: `HttpAdapter` → `fetch('/api/...')` → axum → same core.
-
----
-
-## 2. Data model
-
-### 2.1 Enums (canonical id in storage, label for display)
-
-All enums serialize to stable snake_case ids so sync never depends on
-localised text; `label()` renders the exact strings from the prototype.
-
-| Enum | Variants (id → label) |
+| Path | What it is |
 |---|---|
-| `EntryKind` | `feed`→Feed, `sleep`→Sleep, `diaper`→Diaper |
-| `FeedKind` | `breast_left`→Breast left, `breast_right`→Breast right, `bottle`→Bottle, `solids`→Solids |
-| `DiaperType` | `pee`→Pee, `poop`→Poop, `both`→Both |
-| `PeeShade` | `pale`→Pale, `normal`→Normal, `dark`→Dark |
-| `Amount` | `small`→Small, `medium`→Medium, `large`→Large |
-| `PoopColor` | `mustard`, `yellow`, `green`, `brown`, `dark`, `pale`, `red_streaked` (labels as in prototype, incl. dot colours) |
-| `Consistency` | `liquid`, `runny`, `soft`, `pasty`, `firm`, `hard` |
-| `SleepLocation` | `crib`, `arms`, `stroller`, `car`, `parents_bed` |
-| `WakeMood` | `calm`, `fussy`, `cried` |
-| `Role` | `owner`, `co_parent`, `caregiver` |
+| `crates/core` | Event types, enums, validation, the hybrid logical clock, the append-only event log, the SQLite projection, permissions, CSV export, photo resizing, the widget queue |
+| `crates/sync` | Peer networking: QUIC transport, gossip fan-out, anti-entropy, discovery, relay configuration. **Phase 2 spike decides the library.** |
+| `app/` | Tauri 2 (Android first, then iOS and desktop) plus the Glance widget |
+| `web/` | The Tauri frontend: TypeScript custom elements, built by Vite into `web/dist` and loaded as `frontendDist`. **Not** a standalone browser app any more |
+| `peer/` | Headless replica binary, reusing `crates/core` + `crates/sync` (phase 5) |
+| `deploy/` | Terraform + Docker for the peer and a self-hosted iroh relay (phase 5) |
 
-Unknown strings are rejected (`serde` + explicit validation) — enum validation tests cover this.
+`crates/core` must never depend on Tauri, the network, or any UI. Everything
+above it is a front end.
 
-### 2.2 SQLite schema (migration v1, `PRAGMA user_version`)
+## 3. Data model
 
-Times are **i64 milliseconds since epoch, UTC**. "Today" is computed in device local time.
+**Events are append-only and immutable.** The log is a grow-only set; nothing is
+ever edited or removed from it. Ids are UUIDv7, generated on the device.
 
-```sql
-CREATE TABLE babies (
-  id TEXT PRIMARY KEY, name TEXT NOT NULL, born TEXT,        -- born = 'YYYY-MM-DD'
-  theme TEXT NOT NULL DEFAULT 'auto',                        -- auto|light|dark
-  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, deleted INTEGER NOT NULL DEFAULT 0
-);
+Event kinds: `create`, `edit`, `delete`, `sleep_start`, `sleep_stop`.
 
-CREATE TABLE caregivers (                                    -- users
-  id TEXT PRIMARY KEY, baby_id TEXT NOT NULL, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE,
-  password_hash TEXT NOT NULL,                               -- Argon2id PHC string
-  role TEXT NOT NULL,                                        -- owner|co_parent|caregiver
-  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, deleted INTEGER NOT NULL DEFAULT 0
-);
+Every event carries:
 
-CREATE TABLE entries (
-  id TEXT PRIMARY KEY,                                       -- UUIDv7 — idempotent upsert key
-  baby_id TEXT NOT NULL,
-  kind TEXT NOT NULL,                                        -- feed|sleep|diaper
-  occurred_at INTEGER NOT NULL,                              -- start / log time
-  ended_at INTEGER,                                          -- sleep end; NULL = sleep in progress
-  feed_kind TEXT,                                            -- feed
-  amount INTEGER, amount_unit TEXT,                          -- feed: ml (bottle/solids) or min (breast)
-  diaper_type TEXT,                                          -- diaper
-  pee_shade TEXT, pee_amount TEXT,
-  poop_color TEXT, consistency TEXT, poop_amount TEXT,
-  sleep_location TEXT, wake_mood TEXT,                       -- sleep
-  note TEXT, photo TEXT,                                     -- photo = file name
-  caregiver_id TEXT,                                         -- author
-  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,  -- updated_at = LWW clock
-  deleted INTEGER NOT NULL DEFAULT 0                         -- soft delete tombstone
-);
-CREATE INDEX idx_entries_updated ON entries(updated_at, id);
-CREATE INDEX idx_entries_occurred ON entries(kind, occurred_at);
+- `id` — UUIDv7
+- `topic` — the baby it belongs to
+- `author` — the device's ed25519 public key id
+- `hlc` — the hybrid logical clock timestamp (§3.1)
+- `kind`
+- `payload` — encrypted (§3.3)
+- `signature` — over the headers **and** the ciphertext
 
-CREATE TABLE sessions (                                      -- server only
-  token_hash TEXT PRIMARY KEY,                               -- HMAC-SHA256(SESSION_SECRET, token)
-  caregiver_id TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL
-);
+The headers stay readable so peers can sync without the group key. Because the
+headers are inside the signature, a peer cannot re-attribute or re-time a
+validly-signed event.
 
-CREATE TABLE invites (
-  token_hash TEXT PRIMARY KEY, role TEXT NOT NULL, invited_by TEXT NOT NULL,
-  created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, accepted_by TEXT
-);
+### 3.1 Clock
+
+A hybrid logical clock: `(wall_ms, counter, node_id)`. It is monotonic even when
+the wall clock goes backwards, and merging a remote timestamp advances the local
+one. `node_id` breaks ties between devices that tick in the same millisecond.
+
+### 3.2 Merge
+
+Merge is **set union of events** — inserting an event twice is a no-op, which
+makes retries safe.
+
+Resolution per entry id is a **single last-writer-wins register over the whole
+entry state** (payload *and* tombstone flag), ordered by `(hlc, author)`:
+
+- Edits and deletes compete in the same register, so a delete cannot be
+  resurrected by a late edit and the two states cannot oscillate.
+- A tie on HLC is broken by comparing the author key bytes, so every device
+  independently reaches the same winner. HLC equality must never be resolved by
+  arrival order.
+
+A `delete` is a tombstone event. `delete` of everything is just a tombstone per
+entry, exactly as today.
+
+### 3.3 Encryption
+
+Payloads are sealed with the per-baby group key using XChaCha20-Poly1305; the
+ciphertext authenticates the headers as associated data. The group key is
+rotated when a member is removed (§5).
+
+### 3.4 Sleep sessions
+
+A sleep is a **session** with its own id. `sleep_start` and `sleep_stop` are
+events keyed by that id, so two devices acting concurrently converge:
+
+- `sleep_stop` is idempotent — a second stop for the same session is a no-op,
+  not a second wake-up.
+- `running_sleep()` is derived: the newest session with no stop.
+
+### 3.5 Photos
+
+Resized JPEGs, content-addressed, stored as blobs and fetched lazily, cached on
+disk by hash. The event payload holds the hash, not the bytes.
+
+## 4. Sync
+
+- **Live fan-out:** one gossip topic per baby.
+- **Anti-entropy:** on every connection and at app start, reconcile ranges (or
+  exchange version vectors) so a device that was offline catches up. Gossip is
+  lossy and unordered — never rely on it alone for correctness.
+- **Discovery:** mDNS on the LAN, plus the relay and peer addresses carried in
+  the invite. The relay URL is configurable; a self-hosted relay is supported.
+- **Android:** sync on app open and on a WorkManager schedule. The widget writes
+  events locally and they replicate when a connection exists.
+
+## 5. Members, invites, roles
+
+**Identity — there is no login and no account.** A device's ed25519 keypair *is*
+its identity: generated the first time it opens, kept on the device (SQLite for
+now, behind a `KeyStore` trait so an OS keystore — and the peer's file/env
+backend — can slot in later), and named by the hex of its public half.
+`Event::author` carries it, so a peer verifies an event without asking anyone,
+and `EventLog::insert` refuses anything whose signature does not check out.
+
+**Losing the key loses the identity**, deliberately and with no recovery: the
+log survives on other devices, and already-replicated events keep verifying
+under the old public key, but that device can never author as it again and any
+role certificate bound to it must be re-issued. There is no reset because there
+is no server to ask. Key export/import is out of scope.
+
+- The **first device** creates the baby, the group key and the owner key.
+- An **invite** is a QR code or link carrying the topic, the group key, the
+  owner's address and a role. The owner signs a **member certificate** binding
+  the new device key to that role.
+- **Roles** (co-parent: edit all; caregiver: view and add) are enforced on every
+  device when an event is validated, using the existing `permissions::can`
+  matrix with `is_author` derived from the event's author.
+- **Removal** rotates the group key and re-shares it with the remaining devices,
+  and publishes an owner-signed revocation event.
+
+> **Removal is forward secrecy only.** The removed device keeps every event it
+> has already decrypted, and its device key remains valid in the log until peers
+> honour the revocation. A peer that is offline during the removal may keep
+> accepting that member's events for a while. This is inherent to the design and
+> must be documented, not discovered.
+
+## 6. Known limitations and non-goals
+
+- **Clocks are trusted.** HLC makes ordering deterministic, but any member can
+  win every conflict by claiming a far-future timestamp. Acceptable for a family
+  app; it is a non-goal to defend against a malicious member.
+- **No key recovery.** Losing a device key loses that identity — no reset, no
+  backup, no export (see §5). The data survives; the identity does not.
+- **No consensus and no global time.** Peers converge, they do not agree on a
+  linear history.
+- **Revocation is eventually consistent**, per §5.
+- Photos are not deleted when their entry is tombstoned; blob garbage
+  collection is not in scope yet.
+
+## 7. Phases
+
+1. **core** — event log, HLC, projection, permissions, with tests for merge,
+   conflicts, HLC and permissions. *No networking.* ← current
+2. **SPIKE, before any UI work** — two devices (phone + laptop) exchanging events
+   by gossip and anti-entropy across different networks, and a device catching up
+   after being offline. Pick **iroh** (QUIC + `iroh-gossip` + `iroh-blobs`) or
+   **p2panda-net** and justify it in writing.
+3. **Tauri app** — storage adapter moves from HTTP/IPC to core in-process;
+   Android widget taps log locally and refresh.
+4. **Invites, roles, key rotation, photos.**
+5. **Peer container** and self-hosted relay, then iOS and desktop.
+
+## 8. Verification
+
+```
+cargo test --workspace                     # core: unit + integration
+cargo clippy --workspace --all-targets -- -D warnings
+cargo fmt --check
+cd web && npm run build                    # the app frontend still builds
+cd app && npm run android:build -- --apk    # phase 3 onward
 ```
 
-### 2.3 Validation rules (core::validate)
+Phase 1 is done when `cargo test --workspace` covers, at minimum: HLC
+monotonicity and merge, set-union idempotency, LWW convergence from both
+directions, delete-vs-edit precedence, concurrent sleep stop, and role
+enforcement rejecting an unauthorised event.
 
-- `kind` required; `feed` ⇒ `feed_kind` required.
-  - breast ⇒ `amount_unit = "min"`, `amount` 0..=180;
-  - bottle ⇒ `amount_unit = "ml"`, `amount` 0..=2000;
-  - solids ⇒ optional `amount` + `amount_unit = "ml"`.
-- `diaper` ⇒ `diaper_type` required; pee ⇒ shade/amount optional but must be valid
-  enum values if present; poop ⇒ same for colour/consistency/amount; `photo` allowed.
-- `sleep` ⇒ `ended_at` NULL (running) **or** `ended_at > occurred_at`.
-- `occurred_at` not more than 5 min in the future (clock skew allowance).
-- `note` ≤ 500 chars; ids must parse as UUID; unknown enum id ⇒ error.
+## 9. Carried over from the previous design
 
-### 2.4 Sync protocol (REST, local-first)
-
-- **Idempotency:** entry ids are UUIDv7 generated on the device before any network
-  call; the server upserts by primary key, so retries are safe.
-- **Pull:** `GET /api/sync?since=<cursor>` → `{ entries, baby, cursor }`.
-  Cursor is composite `"<updated_at>:<entry_id>"` and rows are returned ordered by
-  `(updated_at, id)` with strict `>` comparison — no rows lost when two entries
-  share a millisecond.
-- **Push:** `POST /api/sync` `{ entries: [...] }` → per-row last-write-wins:
-  `INSERT … ON CONFLICT(id) DO UPDATE SET … WHERE excluded.updated_at >= entries.updated_at`.
-  Re-pushing the same payload is a no-op (idempotent); equal timestamps → incoming wins.
-- **Soft deletes:** `deleted = 1` tombstones sync like any update. "Delete all" writes
-  tombstones (so other devices converge), then the server may purge tombstones older
-  than 30 days.
-- **Photos:** `PUT /api/photos/:entry_id` (raw JPEG) / `GET /api/photos/:entry_id`
-  (cookie-auth). Stored under `/data/photos/`, resized server-side to max 1280 px JPEG
-  (core::photo). The app stores the same file on disk and uploads on sync.
-- **Sessions:** server issues a random 256-bit token in an `HttpOnly; SameSite=Lax`
-  cookie; only `HMAC-SHA256(SESSION_SECRET, token)` is stored. Argon2id for passwords.
-
-### 2.5 Roles (core::permissions — single source of truth, tested)
-
-| Action | owner | co_parent | caregiver |
-|---|---|---|---|
-| view entries / baby | ✓ | ✓ | ✓ |
-| create entry | ✓ | ✓ | ✓ |
-| edit/delete **own** entry | ✓ | ✓ | ✓ |
-| edit/delete **any** entry | ✓ | ✓ | ✗ |
-| edit baby profile, invite | ✓ | ✓ | ✗ |
-| delete all data, remove caregivers | ✓ | ✗ | ✗ |
-
-`can(role, action, is_author) -> bool` is used by axum handlers and tested as a matrix.
-
----
-
-## 3. Frontend (web/) — TypeScript web components
-
-**Rule: everything is a component.** Every piece of UI is a custom element with
-its own stylesheet next to it, so any part can be changed in isolation.
-
-- **Stack:** TypeScript + native custom elements (light DOM, no framework, no
-  shadow DOM so the prototype's CSS keeps working) + Vite. `npm install` then
-  `npm run dev` (HMR, `/api` proxied to the Rust server) or `npm run build` →
-  `dist/` (served by axum, and Tauri's `frontendDist`). Vite/`tsc` replace the
-  prototype's "no build step" constraint — the output is still plain
-  HTML/CSS/JS.
-- **`LLComponent`** (`core/component.ts`): declarative `template()`, `mount()`
-  for event wiring, `subscribe()`/`watch(store)` for reactivity, `refresh()`
-  skips re-render while the user is typing, `preservesChildren` for wrappers
-  like `<ll-card>`.
-- **Component tree**
-  - `ui/` — primitives, each with a co-located `.css`: `ll-chip`,
-    `ll-chip-group`, `ll-tile`, `ll-log-list`, `ll-entry-row`, `ll-field`,
-    `ll-stepper`, `ll-photo-picker`, `ll-photo-grid`, `ll-card`, `ll-stat`,
-    `ll-bar-chart`, `ll-day-nav`, `ll-caregiver-row`, `ll-button`, `ll-tabs`,
-    `ll-sheet-host`. `ui/index.ts` registers them all (and their CSS) at boot.
-  - `screens/` — `ll-auth`, `ll-today`, `ll-history`, `ll-trends`, `ll-baby`.
-    `ll-auth` is the sign-in front door: a full page (not a sheet) that
-    `ll-app` configures from `ui.auth` before unhiding it.
-  - `sheets/` — `ll-feed-sheet`, `ll-diaper-sheet`, `ll-sleep-sheet`,
-    `ll-detail-sheet`, all built on `LLSheet`
-    (`core/sheet.ts`, `field()/error()/close()`; the shared helpers live in
-    `core/form.ts`).
-  - `ll-app` is the composition root; `main.ts` owns boot + the 401 hook.
-- **State split:** `UiStore` (`core/ui-store.ts`) holds view-only state (tab,
-  open sheet, whether the sign-in screen has taken over, the boot flag, history
-  cursor/filter, invite role) and the inter-component event
-  names (`ll-open-entry`, `ll-tile-press`, `ll-chip-press`, `ll-change`,
-  `ll-step`, `ll-photo-picked`, `ll-day-change`, `ll-signed-in`). Sheets open and
-  close through `ui.openSheet()` / `ui.closeSheet()`; the sign-in screen
-  through `ui.showAuth()` / `ui.hideAuth()`. `AppStore` (`data/store.ts`)
-  holds data (entries, baby, user) and notifies on change; components re-render
-  from it.
-- **Storage adapter** (`data/storage.ts`) — identical interface, two
-  implementations: `HttpAdapter` (browser → REST, HttpOnly cookie) and
-  `TauriAdapter` (app → IPC → `little-log-core`, offline-first). Entry ids are
-  UUIDv7 from the `uuid` package; photos are downscaled to ≤1280 px JPEG with
-  `compressorjs`.
-- **Prototype fidelity kept:** Caprasimo/Jost (bundled locally in
-  `public/fonts`), green palette, tiles, bottom sheets, tab bar, feeder cards
-  with Breast left default, light/dark.
-- **Accessibility deltas vs. prototype:** min 56 px tap targets, one consistent
-  `:focus-visible` ring for every control, `prefers-reduced-motion` honoured.
-- **Responsive:** one narrow column on phones; at ≥700 px the content column
-  widens (and ≥1100 px again), Today's tiles go three-up, Trends pairs its
-  cards, the photo gallery gains columns and sheets become centred dialogs.
-  The layout tokens (`--content`, `--gutter`, `--tabbar-room`) live in
-  `styles/tokens.css`, so breakpoints are declared once. `dvh` units and
-  `env(safe-area-inset-*)` keep it correct with mobile keyboards and notches.
-- **Templates:** every `template()` is a single ES template literal (no `+`
-  concatenation); interpolated values always go through `esc()`.
-- **Commands:** `npm run typecheck` (`tsc --noEmit`), `npm run build`
-  (`tsc --noEmit && vite build`), `npm run dev`.
-
-## 4. Android widget (highest risk — done first in Phase 2)
-
-**Spike outcome (evaluated `tauri-plugin-widgets` 0.6.2, MIT):**
-- It renders Jetpack Glance widgets from a declarative JSON tree held in shared
-  preferences — no Kotlin needed, and it would cover the *display* half.
-- **Rejected for our one-tap requirement:** its `button`/`link` elements "emit a
-  `widget-action` Tauri event back to the app", i.e. the tap is delivered to the
-  running app (surfaced to JS via `onWidgetAction`). Tapping to log would need
-  the app running/foregrounded, which is exactly what the plan says we must not
-  depend on. It also keeps widget config in JS-run shared prefs, so a cold
-  process can't render fresh numbers.
-- Its docs explicitly bless the fallback: *"If you need custom behavior, create
-  your own `GlanceAppWidget`/`GlanceAppWidgetReceiver` and keep the same
-  shared-group + config contract."*
-
-**What we built instead (our own Glance widget):**
-
-| Piece | File |
-|---|---|
-| Queue the receiver appends to (`[{id,action,at}]`, UUIDv7 ids) | `gen/android/.../widget/PendingQueue.kt` |
-| One-tap broadcast receiver → queue → WorkManager | `.../widget/LogActionReceiver.kt` |
-| Headless drain worker (no activity, no WebView) | `.../widget/WidgetDrainWorker.kt` |
-| JNI calls into the core | `.../widget/WidgetBridge.kt` ↔ `app/src-tauri/src/widget.rs` |
-| The widget itself: "Last fed 1h 20m ago", "Sleeping 42m", 6 buttons | `.../widget/LittleLogWidget.kt` + `LittleLogWidgetReceiver.kt` |
-| Re-render after in-app changes | `.../widget/WidgetUpdater.kt`, `MainActivity.onStop` |
-| Launcher shortcuts (same six actions) | `res/xml/shortcuts.xml` + manifest meta-data |
-| Queue/drain/state logic (unit-tested) | `crates/core/src/pending.rs`, `app/src-tauri/src/widget.rs` |
-
-- A tap writes a JSON line to `pending_actions.json`; the worker loads the
-  cdylib and calls `nativeDrain()`, which applies the taps to SQLite, writes
-  `widget_state.json` and returns whether anything was logged. The activity is
-  never started.
-- **Idempotency:** the tap id *is* the entry id, plus a small applied-ids ledger,
-  so a re-delivered broadcast or a retried worker can never double-log.
-- The app drains the queue on launch too, and publishes `widget_root.txt` so the
-  worker always opens the same database.
-- iOS WidgetKit / macOS widgets = Phase 3.
-
-**Still to verify on hardware:** adding the widget, tapping a button with the app
-swiped away, WorkManager's background execution, and the shortcut sheet.
-
-**Verified in this environment** (`tauri android build --apk --debug`, no device attached):
-- Rust cross-compiles for all four ABIs and the libs are packaged
-  (`lib/{arm64-v8a,armeabi-v7a,x86,x86_64}/liblittle_log_app.so`).
-- The JNI bridge is real: `nm` on the built lib shows
-  `Java_app_littlelog_widget_WidgetBridge_nativeDrain` / `_nativeRefresh`.
-- Our Kotlin lands in the APK (`classes7.dex` carries `LittleLogWidget` etc.),
-  and the manifest adds the widget provider + `android.app.shortcuts` metadata.
-- The web UI is embedded in the native library (Tauri inlines `frontendDist`):
-  `strings` finds `index-*.js`, `index-*.css` and `fonts/fonts.css` inside the
-  `.so`, matching the freshly built `web/dist`.
-- The debug APK is ~633 MB because it keeps four ABIs and unstripped debug
-  symbols; release builds (and `--split-per-abi`) are what CI should publish.
-
-Two Glance 1.2 API notes that bit during the spike, now encoded in the code:
-`actionRunCallback<ActionCallback>` is the only tap entry point that doesn't
-start an activity (there is no `actionStart`), `ColorProvider(day, night)` lives
-in `androidx.glance.color` (not `.unit`), and there is no weight modifier — the
-buttons use fixed widths.
-
----
-
-## 5. Risks
-
-| # | Risk | Mitigation |
-|---|---|---|
-| 1 | **Widget tap-to-log without launching app** (Android background limits, Rust lib load in worker process) | Spike done: `tauri-plugin-widgets` emits taps *into the app*, so we built our own Glance widget + broadcast receiver + WorkManager worker that calls the core over JNI. Unit-tested in Rust; **needs device verification** (add widget, tap with app swiped away) |
-| 2 | `tauri-plugin-widgets` may not support custom tap actions | Confirmed by its docs/schema (`widget-action` event to the app) → custom provider, which the plugin's own docs recommend for custom behaviour |
-| 3 | No Rust toolchain in env; Android SDK/NDK versions vs Tauri 2 requirements | rustup installed (minimal profile); verify `tauri android dev` early, pin toolchain in `rust-toolchain.toml` |
-| 4 | No emulator/device guaranteed in this environment | adb present; if no device, verification falls to CI (APK build) + documented manual step |
-| 5 | LWW ties at millisecond granularity lose rows | Composite cursor `ts:id`, `>=` conflict clause, idempotent UUIDv7 upserts |
-| 6 | Timezones/DST corrupt "today" stats | Store UTC ms; day boundaries computed in local tz; tests around DST |
-| 7 | Photo sync bloat / EXIF privacy | Resize ≤1280 px JPEG in Rust before storage; strip EXIF (re-encode); tombstone cleanup |
-| 8 | Cookies/CORS in browser mode | Done: the server serves `web/dist` and the API from one origin, so the `HttpOnly; SameSite=Lax` cookie just works (verified live) |
-| 9 | Argon2 login brute force | Done: argon2id at the crate defaults (19 MiB, t=2), unknown emails still hash (timing), and failed sign-ins are throttled per address (tested) |
-| 10 | SQLite concurrency (app + worker + sync) | WAL mode, `busy_timeout`, single writer discipline |
-| 11 | Fonts offline | Bundle woff2 locally, no runtime network needed |
-| 12 | iOS/macOS signing & notarisation (Phase 3) | Documented, out of scope for this session |
-| 13 | `SESSION_SECRET` rotation invalidates logins | Documented in README; sessions are re-creatable |
-
----
-
-## 6. Phases & verification (small steps, each verified)
-
-### Verified: Docker (`docker build` + compose)
-
-- `docker build -f docker/Dockerfile -t little-log-server .` → **156 MB**, four
-  stages: web (Vite) → cargo-chef planner → Rust release build → `debian-slim`.
-  `ca-certificates` is the only runtime package: the healthcheck is the binary
-  itself (`little-log-server healthcheck` does a raw TCP `GET /healthz`, so the
-  image carries no curl/wget).
-- `docker compose up -d` from the committed files → container healthy,
-  `user=littlelog` (uid 10001), `restart=unless-stopped`,
-  `./data:/data` mounted, UI + API served on 8080 (`/` 200 html, `/healthz` 200
-  json, `/api/entries` 401 without a session).
-- Fresh-machine rehearsal on a pristine named volume: `needs_setup:true` →
-  first account becomes owner with a baby → a nap logged → CSV export →
-  sync pull with cursor; the container runs as uid 10001 and writes
-  `little-log.sqlite3` + `photos/` into the volume; **restarting the container
-  keeps the data and the session** (stable `SESSION_SECRET`).
-- Gotcha worth knowing: Colima only bind-mounts paths under `$HOME`, so the
-  pristine test used a Docker named volume instead of a temp directory.
-
-**Phase 1 — core + server + Docker + browser UI** (core + server + Docker done)
-- [x] S1 workspace + `little-log-core`: models, enums, validation → `cargo test`
-- [x] S2 core: SQLite repository + migrations + CSV + photo → `cargo test`
-- [x] S3 core: sync logic (LWW, cursor, tombstones) + widget queue → `cargo test`
-- [x] S4 `little-log-server`: axum routes, Argon2id sign-in, invite links, HttpOnly
-      cookies, permissions, sync pull/push, CSV, photos, SPA hosting → 17 integration
-      tests + a live curl run of the whole flow
-- [x] S5 web UI on the storage adapter → `npm run typecheck` + `npm run build`
-      (TypeScript web components; the REST adapter lands with S4)
-- [x] S6 Dockerfile (cargo-chef, non-root, self-healthcheck) + compose + README
-      + MIT licence + `.env.example` + `.gitignore` → image 156 MB, compose up
-      healthy, full flow on a pristine volume (see §8)
-- [ ] S7 CI workflow + MIT licence → `cargo fmt --check`, `cargo clippy`
-
-**Phase 2 — Android**
-- [x] S8 Tauri 2 app (`app/`): core wired through IPC commands, `frontendDist` →
-      `../web/dist` → `cargo check`, `cargo clippy`, `tauri android init`
-- [x] S9 widget: spike evaluated the plugin, then our own Glance widget +
-      `ActionCallback` + WorkManager drain + JNI bridge + launcher shortcuts →
-      `tauri android build --apk` succeeds; JNI exports, dex classes, manifest
-      metadata and the embedded UI all verified inside the APK (device taps
-      still pending — see §4)
-- [ ] S10 app↔server sync (push/pull, photos, invites): replaces the `sync_now` stub
-
-**Server: what is left**
-- S10 wires the app's `sync_now` command to `/api/sync` (the endpoint is live and tested).
-- Docker is in place: `docker/Dockerfile` (web → cargo-chef planner → Rust build →
-  debian-slim runtime, non-root uid 10001, `HEALTHCHECK` = `little-log-server
-  healthcheck`, which probes `GET /healthz` over raw TCP so the image needs no
-  curl), `docker-compose.yml` (one service, 8080, `./data:/data`, healthcheck,
-  `restart: unless-stopped`), `.env.example`, `README.md` (setup, backup, HTTPS
-  via Caddy or Tailscale) and the MIT licence.
-- Still open: tombstone purging (a scheduled job) and CI.
-
-**Phase 3 — later**
-- [ ] iOS + macOS desktop targets, WidgetKit widgets
-- [ ] Tombstone purging job, rate limiting hardening
-
-**Verification commands per step:** `cargo test`, `cargo clippy --all-targets`,
-`cargo fmt --check`, `npm run typecheck && npm run build` (web),
-`cargo check` + `cargo clippy` in `app/src-tauri`,
-`tauri android build --apk` (CI, no device needed), `tauri android dev` on a
-connected device, `docker build -t little-log-server docker/` +
-`docker compose up -d` + healthcheck.
+- **Kept:** the domain enums, validation, the permissions matrix, CSV export,
+  photo resizing, the widget queue, and the whole `web/` component library.
+- **Replaced:** `crates/core::sync` (cursor + LWW on `updated_at`) becomes the
+  event log + HLC. `crates/core::repo` becomes a *projection*: rebuildable from
+  the log, not the source of truth. Its `sessions`, `invites` and
+  `password_hash` columns exist only for the deleted server and go away.
+- **Still valid:** the widget spike conclusion (own Glance widget + WorkManager
+  drain; `tauri-plugin-widgets` rejected) — phase 3.

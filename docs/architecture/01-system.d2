@@ -1,0 +1,46 @@
+title: |md
+  # Little Log — the distributed model
+  **No central server.** Every caregiver's device holds a full replica and replicates directly with its peers.
+| {near: top-center}
+
+direction: down
+
+household: "Household peers — each holds a complete replica" {
+  direction: right
+
+  phone: "Parent phone\nAndroid · Tauri + Glance widget" {
+    shape: rectangle
+  }
+  laptop: "Parent laptop\ndesktop · Tauri" {
+    shape: rectangle
+  }
+  grandparent: "Grandparent tablet\niOS / Android" {
+    shape: rectangle
+  }
+  alwayson: "Always-on peer\nheadless · Docker\nno special authority" {
+    shape: cylinder
+  }
+}
+
+invite: "QR / link invite\ntopic · group key ·\nowner address · role" {
+  shape: document
+}
+
+relay: "iroh relay (self-hosted)\nforwards QUIC when no direct path\nis available — it cannot decrypt" {
+  shape: cloud
+}
+
+household.phone <-> household.laptop: "QUIC · mDNS on the LAN"
+household.phone <-> household.grandparent: "QUIC + hole punch\nacross networks"
+household.laptop <-> household.alwayson
+household.grandparent <-> household.alwayson
+
+household.alwayson <-> relay: "relay fallback\n(a dumb pipe, never a source of truth)"
+household.phone <-> relay
+
+invite -> household.grandparent: "scan → join\n+ owner-signed\nmember certificate"
+
+note: |md
+  **One gossip topic per baby.** Payloads are sealed with that baby's group key,
+  so a peer relaying an event it cannot decrypt still cannot read or alter it.
+| {shape: text; near: bottom-center}

@@ -15,6 +15,9 @@ app/             Tauri 2 app (Android first) + the Glance home-screen widget
 web/             TypeScript web components (no framework) + Vite build
 ```
 
+Architecture diagrams of the distributed (local-first, peer-to-peer) sync model
+live in [`docs/architecture/`](docs/architecture/README.md).
+
 ## Quick start (server)
 
 Needs Docker with Compose v2.

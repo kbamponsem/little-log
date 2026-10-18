@@ -1,0 +1,63 @@
+title: |md
+  # Inside one peer — local-first
+  Everything already works with no network at all. The log is the source of truth; every other store is a rebuildable projection.
+| {near: top-center}
+
+direction: down
+
+frontends: "Front ends — one Rust codebase" {
+  direction: right
+  ui: "Tauri frontend\nTypeScript custom elements" {
+    shape: rectangle
+  }
+  widget: "Glance widget (Android)\nsix one-tap buttons" {
+    shape: rectangle
+  }
+}
+
+queue: "Widget action queue\nsmall JSON file · UUIDv7 per tap\ndrained on launch + WorkManager" {
+  shape: queue
+}
+
+core: "crates/core — the shared brain (never depends on the network or the UI)" {
+  direction: down
+
+  hlc: "Hybrid logical clock\n(wall_ms, counter, node)\nmonotonic under skew" {
+    shape: hexagon
+  }
+  log: "Append-only event log\nimmutable · a grow-only set\nsignatures checked on insert" {
+    shape: cylinder
+  }
+
+  derived: "Derived from the log — rebuildable at any time" {
+    direction: right
+    proj: "SQLite projection\nfolded in merge order" {
+      shape: cylinder
+    }
+    photos: "Photo blob cache\ncontent-addressed JPEGs\npayload holds only the hash" {
+      shape: cylinder
+    }
+  }
+}
+
+sync: "crates/sync\nQUIC · gossip fan-out · anti-entropy" {
+  shape: hexagon
+}
+
+peers: "Other devices" {
+  shape: rectangle
+}
+
+frontends.widget -> queue: "tap (the app may be closed)"
+queue -> core.log: "drain → seal + sign"
+frontends.ui -> core.hlc: "author an event"
+core.hlc -> core.log: "every event carries an HLC"
+core.log -> core.derived.proj: "replay / fold"
+core.log -> core.derived.photos: "hash → blob"
+core <-> sync: "insert = set union\nmissing(heads) = the gap"
+sync <-> peers: "QUIC + gossip"
+
+keys: |md
+  **Two keys.** A **device key** (ed25519) signs every event — its public half *is* the device id.
+  A **group key** (one per baby) seals the payload so a relaying peer cannot read it.
+| {shape: text; near: bottom-center}

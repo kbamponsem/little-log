@@ -1,4 +1,35 @@
 /** Inline SVG icons (from the prototype). */
+
+/**
+ * The International Breastfeeding Symbol (Matt Daigle, 2006) — donated to the
+ * public domain, so it can ship without an attribution file.
+ *
+ * The geometry is unmodified: only the colour is inherited rather than fixed,
+ * and the badge the original is drawn on is dropped. Its native 1024 grid is
+ * scaled to this set's 24, and the baby's head — a circle the original paints
+ * in the badge colour to punch through — is a hole here.
+ */
+const BREAST_FIGURE =
+  '<circle cx="512.2" cy="276.4" r="116" fill="currentColor" stroke="none"/>' +
+  '<path fill="currentColor" stroke="none" fill-rule="evenodd" d="M610.3,423.8c12.7,0,24.2,1.6,34.4,4.9c18.9,6,33.5,17.2,45,30c19.9,22.2,36.3,54.1,54,86 c16.9,30.4,36.4,63.1,36,104c-0.4,40.7-19.9,70.1-40,92c-27.2,29.7-63.2,65.7-118,65c-27.6-0.4-53.4-15.9-49-48 c3.4-24.8,26.1-35.3,40-52c-68.3,7.1-97.8-27.5-124-69c-10.8-17.1-17.7-42-39-46c-42.5-8-37.4,40.9-27,68c3.4,8.9,14.7,24.8,14,32 c-1.2,12.3-25.5,17.3-39,20c-17.4,3.4-38,2.7-51,8c5.1,10.8,18.7,15.6,30,20c11.4,4.4,24.6,8.1,38,11c30.2,6.5,62.6,2.9,93,6 c28,2.9,60,27.8,44,65c-11.7,27.2-46.9,41.9-85,44c-65.2,3.6-143.6-29.9-177-60c-27.6-24.9-48.5-65.3-45-114 c3.4-47.4,26.4-94,45-131c23.3-46.3,43.9-96,85-121c13.4-8.2,32.7-14.9,55-14.9z M520.2,610.4a80,80 0 1,0 160,0a80,80 0 1,0-160,0"/>';
+
+/**
+ * The figure's bounds inside that 1024 grid, measured with `getBBox`, plus a 5%
+ * margin — so it sits optically like the stroke icons instead of touching the
+ * edges. Cropping to this rather than the original canvas is what stops the
+ * symbol looking small in its box.
+ */
+const BREAST_BOX = "217.5 125.2 588.9 775.1";
+
+/**
+ * The symbol is handed to both breast options — mirrored for the right, so the
+ * two are distinguishable at a glance. The labels carry the actual meaning.
+ */
+function breastIcon(mirrored: boolean): string {
+  const flip = mirrored ? ' transform="translate(24 0) scale(-1 1)"' : "";
+  return `<svg viewBox="${BREAST_BOX}"${flip}>${BREAST_FIGURE}</svg>`;
+}
+
 export const IC = {
   milk:
     '<path d="M8 2h8"/><path d="M9 2v2.789a4 4 0 0 1-.672 2.219l-.656.984A4 4 0 0 0 7 10.212V20a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-9.789a4 4 0 0 0-.672-2.219l-.656-.984A4 4 0 0 1 15 4.788V2"/><path d="M7 15a6.472 6.472 0 0 1 5 0 6.47 6.47 0 0 0 5 0"/>',
@@ -23,6 +54,8 @@ export const IC = {
     '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>',
   "chevron-left": '<path d="m15 18-6-6 6-6"/>',
   "chevron-right": '<path d="m9 18 6-6-6-6"/>',
+  breast_left: breastIcon(false),
+  breast_right: breastIcon(true),
 } as const;
 
 export type IconName = keyof typeof IC;

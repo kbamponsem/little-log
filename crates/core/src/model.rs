@@ -68,6 +68,20 @@ string_enum!(EntryKind {
     Diaper => "diaper", "Diaper"
 });
 
+string_enum!(
+    /// What an event in the append-only log does.
+    ///
+    /// The ids are what the log stores and what signatures cover, so they can
+    /// never change; the labels are for a future activity feed.
+    EventKind {
+        Create => "create", "Logged";
+        Edit => "edit", "Edited";
+        Delete => "delete", "Deleted";
+        SleepStart => "sleep_start", "Asleep";
+        SleepStop => "sleep_stop", "Awake"
+    }
+);
+
 string_enum!(FeedKind {
     BreastLeft => "breast_left", "Breast left";
     BreastRight => "breast_right", "Breast right";

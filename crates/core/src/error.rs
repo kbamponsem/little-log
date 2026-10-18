@@ -30,6 +30,19 @@ pub enum CoreError {
 
     #[error("image error: {0}")]
     Image(#[from] image::ImageError),
+
+    /// AEAD open failed: wrong group key, wrong associated data, or a tampered
+    /// ciphertext. Deliberately opaque — a caller learns nothing about which.
+    #[error("payload could not be opened")]
+    Unseal,
+
+    /// An event's signature did not verify against the key its author names.
+    #[error("event signature did not verify")]
+    BadSignature,
+
+    /// The operating system's random source failed.
+    #[error("could not read random bytes: {0}")]
+    Random(String),
 }
 
 impl CoreError {
