@@ -1,0 +1,6 @@
+/* Little Log — global stylesheet entry.
+   Shared tokens/base live here; each component imports its own stylesheet,
+   which Vite folds into the bundle (and hot-reloads in dev). */
+
+@import "./tokens.css";
+@import "./base.css";

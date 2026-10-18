@@ -1,0 +1,42 @@
+# Rust
+target/
+**/target/
+
+# Runtime data (SQLite + photos live here)
+data/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+
+# Secrets
+.env
+
+# Node
+node_modules/
+web/dist/
+
+# Tauri / Android build output (gen/android itself is part of the project)
+app/src-tauri/gen/android/app/build/
+app/src-tauri/gen/android/app/src/main/jniLibs/
+app/src-tauri/gen/android/.gradle/
+app/src-tauri/gen/android/build/
+app/src-tauri/gen/android/local.properties
+app/src-tauri/gen/schemas/
+*.apk
+*.aab
+
+# macOS
+.DS_Store
+
+# Terraform (deploy/terraform) — state can hold secrets, never commit it.
+.terraform/
+*.tfstate
+*.tfstate.*
+terraform.tfvars
+crash.log
+
+# The lock file records which registry the provider came from
+# (registry.opentofu.org vs registry.terraform.io), and Terraform and OpenTofu
+# refuse each other's. Run `init` once and commit it yourself if you settle on
+# one of them.
+.terraform.lock.hcl

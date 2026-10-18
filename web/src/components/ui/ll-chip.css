@@ -1,0 +1,73 @@
+/* <ll-chip> — one pill / card button. */
+
+/* The host is a bare wrapper; its inner <button> does the layout. */
+ll-chip {
+  display: contents;
+}
+
+.chip {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 18px;
+  min-height: 56px;
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background: var(--chip);
+  font-weight: 600;
+}
+
+.chip[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.chip .ce {
+  display: flex;
+}
+
+/* Colour swatch used by poop-colour chips. */
+.dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+}
+
+/* "big" — the diaper type row. */
+.chip.big {
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-height: 78px;
+  border-radius: 26px;
+  font-size: 22px;
+  text-align: center;
+}
+
+/* "card" — the feeding kind grid. */
+.chip.fc {
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  min-height: 108px;
+  border-radius: 28px;
+  background: var(--feed);
+  color: var(--on);
+  font-size: 19px;
+  text-align: center;
+}
+
+.chip.fc .ce {
+  font-size: 40px;
+  line-height: 1;
+}
+
+.chip.fc[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--paper);
+}

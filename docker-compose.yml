@@ -1,0 +1,38 @@
+# Little Log — one service, one volume, port 8080.
+#
+#   cp .env.example .env      # then set SESSION_SECRET (openssl rand -hex 32)
+#   docker compose up -d
+#   open http://localhost:8080
+#
+# The web UI and the API are served from the same origin, so the session cookie
+# is a plain HttpOnly/SameSite=Lax cookie — no CORS, nothing to configure.
+
+services:
+  little-log:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: little-log-server
+    container_name: little-log
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:8080"
+    volumes:
+      # One directory holds everything: little-log.sqlite3 + photos/
+      - ./data:/data
+    environment:
+      PORT: "8080"
+      DATA_DIR: /data
+      WEB_DIR: /app/web
+      # Signs sessions and invite links. Changing it signs everyone out.
+      # Without it the server generates a temporary one and warns.
+      SESSION_SECRET: "${SESSION_SECRET:-change-me-little-log}"
+      # Set to 1 when you terminate HTTPS in front of this (see README).
+      COOKIE_SECURE: "${COOKIE_SECURE:-0}"
+      RUST_LOG: "${RUST_LOG:-info}"
+    healthcheck:
+      test: ["CMD", "little-log-server", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+      retries: 3

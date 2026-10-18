@@ -1,0 +1,48 @@
+/* <ll-entry-row> — one timeline row. */
+
+ll-entry-row {
+  display: contents;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 12px 14px;
+  border-radius: 20px;
+  background: var(--paper);
+}
+
+button.row {
+  width: 100%;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.row .tm {
+  min-width: 52px;
+  font-weight: 600;
+}
+
+.row .em {
+  display: flex;
+  font-size: 26px;
+}
+
+.row small {
+  display: block;
+  opacity: 0.75;
+  font-size: 14px;
+}
+
+.row img {
+  width: 44px;
+  height: 44px;
+  margin-left: auto;
+  border-radius: 12px;
+  object-fit: cover;
+}

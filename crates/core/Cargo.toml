@@ -1,0 +1,16 @@
+[package]
+name = "little-log-core"
+description = "Little Log — models, validation, SQLite repository, sync and CSV/photo helpers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+chrono.workspace = true
+image.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true

@@ -1,0 +1,27 @@
+# Build context kept small on purpose: everything heavy is generated inside the
+# image (Rust target dir, node_modules, the web bundle) or belongs to the app.
+
+# Rust build output
+target/
+**/target/
+
+# The Tauri app is not part of the server image (and its target/ is huge)
+app/
+
+# Frontend dependencies and build output (built inside the image)
+web/node_modules/
+web/dist/
+
+# Local runtime data
+data/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+
+# Repo furniture
+.git/
+.gitignore
+.github/
+*.md
+!README.md
+.editorconfig

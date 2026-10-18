@@ -1,0 +1,155 @@
+/* Little Log — reset, typography and the few rules shared everywhere.
+   Everything else lives next to the component that owns it. */
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  scroll-padding-top: env(safe-area-inset-top, 0px);
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 17px;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+ll-app {
+  display: block;
+}
+
+/* Screens: one column, capped at --content, always clear of the tab bar. */
+main,
+ll-today,
+ll-history,
+ll-trends,
+ll-baby {
+  display: block;
+  max-width: var(--content);
+  margin: 0 auto;
+  padding: 18px var(--gutter) var(--tabbar-room);
+}
+
+/* Reading-width forms and lists look stretched at 1040px, so the settings
+   screen keeps its own, narrower measure. */
+ll-baby {
+  max-width: min(var(--content), 720px);
+}
+
+h1 {
+  font-family: var(--disp);
+  font-weight: 400;
+  font-size: clamp(36px, 8vw, 46px);
+  line-height: 1;
+  margin: 6px 0 4px;
+}
+
+h2 {
+  font-family: var(--disp);
+  font-weight: 400;
+  font-size: clamp(24px, 4.5vw, 29px);
+  margin: 30px 0 10px;
+}
+
+.sub {
+  margin: 0 0 18px;
+  font-weight: 500;
+  opacity: 0.8;
+}
+
+/* Group label inside sheets and cards. */
+.grp {
+  margin: 14px 0 6px;
+  font-weight: 600;
+  font-size: 16px;
+}
+
+/* Two fields side by side. */
+.two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.note {
+  opacity: 0.8;
+  font-size: 15px;
+  margin: 8px 0 0;
+}
+
+.empty {
+  opacity: 0.8;
+  padding: 12px 4px;
+}
+
+/* Inline SVG icons. */
+.ic {
+  flex: none;
+  vertical-align: middle;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+/* Screens reserve room for the fixed tab bar. */
+.pg {
+  padding-bottom: var(--tabbar-room);
+}
+
+/* Very small phones: tighter gutters, and side-by-side fields stack so the
+   time inputs keep a usable tap target. */
+@media (max-width: 360px) {
+  :root {
+    --gutter: 12px;
+  }
+
+  .two {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Inline error line, shown by sheets and pickers. */
+.err {
+  color: #a8322d;
+  font-weight: 600;
+  font-size: 15px;
+  margin: 10px 0 0;
+}
+
+/* One consistent focus ring for every interactive control. */
+.tile:focus-visible,
+.chip:focus-visible,
+.go:focus-visible,
+.link:focus-visible,
+.row:focus-visible,
+.ph:focus-visible,
+.del:focus-visible,
+.step-btn:focus-visible,
+.x:focus-visible,
+.inp:focus-visible,
+.tab:focus-visible {
+  outline: 4px solid var(--ink);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet {
+    transition: none;
+  }
+
+  .sleep.run {
+    animation: none;
+  }
+
+  .tile,
+  .go {
+    transition: none;
+  }
+}

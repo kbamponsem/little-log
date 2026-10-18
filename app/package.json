@@ -1,0 +1,21 @@
+{
+  "name": "little-log-app",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Little Log app shell (Tauri 2). The frontend is built from ../web.",
+  "license": "MIT",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "tauri": "tauri",
+    "icon": "tauri icon app-icon.png",
+    "android:init": "tauri android init",
+    "android:dev": "tauri android dev",
+    "android:build": "tauri android build --apk",
+    "ios:init": "tauri ios init",
+    "ios:dev": "tauri ios dev"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

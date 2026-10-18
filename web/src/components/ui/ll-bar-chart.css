@@ -1,0 +1,33 @@
+/* <ll-bar-chart> — a card with a bar chart. */
+
+ll-bar-chart {
+  display: block;
+}
+
+.bars {
+  display: flex;
+  gap: 6px;
+}
+
+.bc {
+  flex: 1;
+  font-size: 13px;
+  text-align: center;
+}
+
+.bt {
+  display: flex;
+  align-items: flex-end;
+  height: 90px;
+}
+
+.bt i {
+  width: 100%;
+  min-height: 4px;
+  border-radius: 10px 10px 4px 4px;
+}
+
+.bc b {
+  display: block;
+  margin-top: 4px;
+}

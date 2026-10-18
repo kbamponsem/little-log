@@ -1,0 +1,45 @@
+/* The sign-in / create-account screen — a full page with a centred card.
+   `[hidden]` (base.css) wins while the user is signed in. */
+
+ll-auth {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: calc(20px + env(safe-area-inset-top, 0px)) var(--gutter)
+    calc(20px + env(safe-area-inset-bottom, 0px));
+}
+
+/* `margin: auto` centres the card and, unlike grid centring, never clips the
+   top of an overflowing form on a short screen (landscape phone, keyboard up). */
+.auth-card {
+  margin: auto;
+  width: min(100%, 440px);
+  padding: 26px 22px 30px;
+  border-radius: 34px;
+  background: var(--paper);
+  box-shadow: 0 8px 0 rgba(0, 0, 0, 0.22);
+}
+
+.auth-card h1 {
+  margin: 0 0 6px;
+  font-size: clamp(38px, 11vw, 52px);
+}
+
+.auth-card .sub {
+  margin: 0 0 18px;
+}
+
+.auth-card .go {
+  margin-top: 20px;
+}
+
+.auth-card .note {
+  text-align: center;
+}
+
+@media (min-width: 700px) {
+  .auth-card {
+    padding: 34px 32px 38px;
+  }
+}

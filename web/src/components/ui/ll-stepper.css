@@ -1,0 +1,27 @@
+/* <ll-stepper> — amount picker: − / value / +. */
+
+ll-stepper {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+ll-stepper .step-btn {
+  all: unset;
+  cursor: pointer;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 34px;
+  line-height: 64px;
+  text-align: center;
+}
+
+ll-stepper output {
+  min-width: 130px;
+  font-family: var(--disp);
+  font-size: 38px;
+  text-align: center;
+}

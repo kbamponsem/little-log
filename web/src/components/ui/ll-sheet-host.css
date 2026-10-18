@@ -1,0 +1,142 @@
+/* <ll-sheet-host> — the scrim plus the sliding sheet container,
+   and the chrome every sheet shares (.x / .go / .del). */
+
+ll-sheet-host {
+  display: contents;
+}
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: none;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.scrim.open {
+  display: block;
+}
+
+.sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: auto;
+  z-index: 30;
+  max-width: 560px;
+  max-height: 92vh;
+  max-height: min(92dvh, 820px);
+  margin: 0 auto;
+  padding: 22px 18px calc(22px + env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
+  border-radius: 36px 36px 0 0;
+  background: var(--paper);
+  color: var(--ink);
+  transform: translateY(105%);
+  transition: transform 0.22s ease;
+}
+
+.sheet.open {
+  transform: none;
+}
+
+.sheet h3 {
+  margin: 0 0 14px;
+  font-family: var(--disp);
+  font-weight: 400;
+  font-size: clamp(26px, 6vw, 32px);
+}
+
+/* Close affordance. */
+.x {
+  all: unset;
+  float: right;
+  min-width: 56px;
+  min-height: 56px;
+  padding: 8px 10px;
+  font-size: 30px;
+  line-height: 38px;
+  text-align: right;
+  cursor: pointer;
+}
+
+.x:focus-visible {
+  border-radius: 14px;
+  outline: 4px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* Primary action. */
+.go {
+  all: unset;
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  margin-top: 22px;
+  padding: 22px;
+  border-radius: 28px;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--disp);
+  font-size: clamp(22px, 5.5vw, 28px);
+  text-align: center;
+  cursor: pointer;
+}
+
+.go:active {
+  transform: scale(0.98);
+}
+
+/* A submit in flight: dim it and stop the second tap. */
+.go[disabled] {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* Destructive action. */
+.del {
+  all: unset;
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  min-height: 56px;
+  margin-top: 12px;
+  padding: 16px;
+  color: #e0554a;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+}
+
+/* Tablet and up: a centred dialog reads better than a full-width drawer.
+   The closed state must not swallow clicks, so it is transparent and
+   pointer-events: none until it opens. */
+@media (min-width: 700px) {
+  .sheet {
+    top: 50%;
+    bottom: auto;
+    padding: 28px 28px 30px;
+    border-radius: 34px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-40%) scale(0.98);
+    transition: transform 0.22s ease, opacity 0.22s ease;
+  }
+
+  .sheet.open {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(-50%) scale(1);
+  }
+}
+
+/* Landscape phones and any short viewport: give the content the height back. */
+@media (max-height: 520px) {
+  .sheet {
+    max-height: 96vh;
+    max-height: 96dvh;
+    padding-top: 16px;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  }
+}

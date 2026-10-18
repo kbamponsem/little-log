@@ -1,0 +1,28 @@
+[workspace]
+resolver = "2"
+members = ["crates/core", "crates/server"]
+# The Tauri app is a standalone crate: keeping it out of the workspace means
+# `cargo test` at the root stays fast (no webkit/Android system deps).
+exclude = ["app/src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/little-log/little-log"
+
+[workspace.dependencies]
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+uuid = { version = "1", features = ["v7", "serde"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

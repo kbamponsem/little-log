@@ -1,0 +1,18 @@
+/* <ll-field> — a labelled input or textarea. */
+
+ll-field {
+  display: block;
+}
+
+.inp {
+  width: 100%;
+  min-height: 56px;
+  padding: 14px 16px;
+  border: 3px solid transparent;
+  border-radius: 18px;
+  background: var(--chip);
+  color: var(--ink);
+  font: inherit;
+  font-size: 18px;
+  resize: none;
+}

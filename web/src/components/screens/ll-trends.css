@@ -1,0 +1,20 @@
+/* Trends screen layout. */
+
+.trend-cards {
+  display: grid;
+  gap: 14px;
+}
+
+/* Tablet and up: the cards pair up, so the charts keep a readable width. */
+@media (min-width: 700px) {
+  .trend-cards {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+}
+
+.big-number {
+  font-family: var(--disp);
+  font-weight: 400;
+  font-size: clamp(28px, 4vw, 34px);
+}

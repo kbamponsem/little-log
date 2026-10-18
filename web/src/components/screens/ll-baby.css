@@ -1,0 +1,28 @@
+/* Baby screen layout. */
+
+/* One caregiver row. */
+.cg {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 0;
+  font-weight: 500;
+}
+
+.cg span:last-child {
+  font-size: 15px;
+  text-align: right;
+  opacity: 0.8;
+}
+
+.invite-button {
+  margin-top: 8px;
+}
+
+.sign-out {
+  margin-top: 8px;
+}
+
+.delete-button {
+  color: #e0554a;
+}

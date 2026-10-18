@@ -1,0 +1,23 @@
+# Copy this to terraform.tfvars and fill it in:
+#
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# `terraform.tfvars` is gitignored, and Terraform loads it automatically — so
+# `terraform apply` works with no shell exports. If you would rather keep the
+# secret out of a file, leave this alone and export the PROXMOX_VE_* variables
+# instead; the two are interchangeable.
+
+# Where the Proxmox API lives. Include :8006 unless something else fronts it.
+proxmox_endpoint = "https://setup.taile38b2a.ts.net/"
+
+# The FULL token string: USER@REALM!TOKENID=SECRET.
+# `pveum user token add terraform@pve littlelog --privsep=0` prints both halves.
+# The UI shows them separately, and only shows the secret once.
+proxmox_api_token = "terraform@pve!littlelog=00000000-0000-0000-0000-000000000000"
+
+# Only for a self-signed certificate (talking to the node's IP, not a named
+# address with a real certificate):
+# proxmox_insecure = true
+
+# Change this if your node is not called `pve`.
+# node_name = "pve"

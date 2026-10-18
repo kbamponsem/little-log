@@ -1,0 +1,71 @@
+/* Little Log — design tokens.
+   Light is the default; `data-theme` on <html> overrides the OS preference. */
+
+:root {
+  --bg: #4fae7e;
+  --ink: #0f2418;
+  --paper: #e9f6ee;
+  --feed: #f7e9a6;
+  --sleep: #b9c8f5;
+  --diaper: #f6b5c4;
+  --chip: #ffffffaa;
+  --on: #0f2418;
+  --onink: #e9f6ee;
+
+  --disp: 'Caprasimo', 'Cooper Black', Georgia, serif;
+  --body: 'Jost', 'Futura', 'Century Gothic', sans-serif;
+
+  /* Layout. Phones are one narrow column; the queries at the end of this file
+     widen and reflow it at ≥700px (tablet) and ≥1100px (desktop). Screens read
+     --content, --gutter and --tabbar-room so the layout moves from one place. */
+  --content: 520px;
+  --gutter: 16px;
+  --tabbar-room: 130px;
+
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f2a1d;
+    --ink: #d6f2e2;
+    --paper: #173a29;
+    --feed: #d9c46a;
+    --sleep: #8fa3e8;
+    --diaper: #e58fa5;
+    --chip: #ffffff22;
+    --on: #0f2418;
+    --onink: #0f2418;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0f2a1d;
+  --ink: #d6f2e2;
+  --paper: #173a29;
+  --feed: #d9c46a;
+  --sleep: #8fa3e8;
+  --diaper: #e58fa5;
+  --chip: #ffffff22;
+  --on: #0f2418;
+  --onink: #0f2418;
+}
+
+/* ---------------------------------------------------------------- layout */
+
+/* Tablet: a roomier column, tiles in a row, cards two-up. */
+@media (min-width: 700px) {
+  :root {
+    --content: 760px;
+    --gutter: 24px;
+  }
+}
+
+/* Desktop: wider still, and the photo gallery gains columns. */
+@media (min-width: 1100px) {
+  :root {
+    --content: 1040px;
+  }
+}

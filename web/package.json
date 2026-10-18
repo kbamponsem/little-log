@@ -1,0 +1,23 @@
+{
+  "name": "little-log-web",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Little Log frontend — TypeScript web components (custom elements), built with Vite. Every piece of UI is a component.",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview --port 4173 --strictPort"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0",
+    "compressorjs": "^1.4.0",
+    "uuid": "^13.0.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "vite": "^6.0.0"
+  }
+}

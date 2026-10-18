@@ -1,0 +1,19 @@
+/* History screen layout. */
+
+.daynav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 10px 0 14px;
+}
+
+.daynav b {
+  font-family: var(--disp);
+  font-weight: 400;
+  font-size: 26px;
+}
+
+/* The timeline sits below the filter chips. */
+.history-log {
+  margin-top: 14px;
+}

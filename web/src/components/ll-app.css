@@ -1,0 +1,11 @@
+/* <ll-app> — the composition root's own chrome (the boot splash). */
+
+.splash {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--paper);
+  font-family: var(--disp);
+  font-size: clamp(34px, 9vw, 48px);
+}

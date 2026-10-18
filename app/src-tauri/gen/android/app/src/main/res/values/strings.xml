@@ -1,0 +1,19 @@
+<resources>
+    <string name="app_name">"Little Log"</string>
+    <string name="main_activity_title">"Little Log"</string>
+    <string name="widget_label">"Little Log"</string>
+    <string name="widget_description">"Log a feed, sleep or diaper in one tap."</string>
+    <!-- Launcher shortcuts: the same actions as the widget buttons. -->
+    <string name="shortcut_left_short">"Left"</string>
+    <string name="shortcut_left_long">"Log a feed on the left"</string>
+    <string name="shortcut_right_short">"Right"</string>
+    <string name="shortcut_right_long">"Log a feed on the right"</string>
+    <string name="shortcut_bottle_short">"Bottle"</string>
+    <string name="shortcut_bottle_long">"Log a bottle feed"</string>
+    <string name="shortcut_pee_short">"Pee"</string>
+    <string name="shortcut_pee_long">"Log a pee diaper"</string>
+    <string name="shortcut_poop_short">"Poop"</string>
+    <string name="shortcut_poop_long">"Log a poop diaper"</string>
+    <string name="shortcut_sleep_short">"Sleep"</string>
+    <string name="shortcut_sleep_long">"Start or end a sleep"</string>
+</resources>

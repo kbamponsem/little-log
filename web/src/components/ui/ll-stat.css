@@ -1,0 +1,22 @@
+/* <ll-stat> — one number in the Today summary row. */
+
+ll-stat {
+  display: block;
+  flex: 1 1 92px;
+  min-width: 0;
+  background: var(--chip);
+  border-radius: 18px;
+  padding: 10px 12px;
+}
+
+ll-stat b {
+  display: block;
+  font-family: var(--disp);
+  font-weight: 400;
+  font-size: 26px;
+}
+
+ll-stat span {
+  font-size: 14px;
+  font-weight: 500;
+}

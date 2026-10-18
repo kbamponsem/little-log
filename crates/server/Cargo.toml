@@ -1,0 +1,38 @@
+[package]
+name = "little-log-server"
+description = "Little Log — the self-hosted sync server (axum + little-log-core)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "little-log-server"
+path = "src/main.rs"
+
+[lib]
+name = "little_log_server"
+path = "src/lib.rs"
+
+[dependencies]
+little-log-core = { path = "../core" }
+argon2 = "0.6"
+axum = { version = "0.8", features = ["json", "macros"] }
+axum-extra = { version = "0.12", features = ["cookie"] }
+base64 = "0.22"
+chrono.workspace = true
+hmac = "0.13"
+getrandom = "0.3"
+serde.workspace = true
+serde_json.workspace = true
+sha2 = "0.11"
+time = "0.3"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
+tower-http = { version = "0.7", features = ["fs", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+http-body-util = "0.1"
+image.workspace = true
+tower = { version = "0.5", features = ["util"] }

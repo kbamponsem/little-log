@@ -1,0 +1,15 @@
+/* <ll-photo-picker> — "Add photo" button with a live preview. */
+
+ll-photo-picker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+ll-photo-picker img {
+  display: none;
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  object-fit: cover;
+}

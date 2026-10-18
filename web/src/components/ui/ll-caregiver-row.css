@@ -1,0 +1,16 @@
+/* ll-caregiver-row — name + role line in the caregivers card. */
+ll-caregiver-row {
+  display: contents;
+}
+.cg {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  font-weight: 500;
+  gap: 10px;
+}
+.cg span:last-child {
+  text-align: right;
+  opacity: 0.8;
+  font-size: 15px;
+}

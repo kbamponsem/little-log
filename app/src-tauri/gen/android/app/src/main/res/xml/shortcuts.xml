@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Launcher shortcuts, the same six actions as the widget's buttons.
+  They hand MainActivity an extra; the entry is written before the UI loads.
+-->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <shortcut
+        android:enabled="true"
+        android:shortcutId="log_breast_left"
+        android:shortcutLongLabel="@string/shortcut_left_long"
+        android:shortcutShortLabel="@string/shortcut_left_short">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="app.littlelog.MainActivity"
+            android:targetPackage="app.littlelog">
+            <extra
+                android:name="app.littlelog.widget.ACTION"
+                android:value="breast_left" />
+        </intent>
+    </shortcut>
+
+    <shortcut
+        android:enabled="true"
+        android:shortcutId="log_breast_right"
+        android:shortcutLongLabel="@string/shortcut_right_long"
+        android:shortcutShortLabel="@string/shortcut_right_short">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="app.littlelog.MainActivity"
+            android:targetPackage="app.littlelog">
+            <extra
+                android:name="app.littlelog.widget.ACTION"
+                android:value="breast_right" />
+        </intent>
+    </shortcut>
+
+    <shortcut
+        android:enabled="true"
+        android:shortcutId="log_bottle"
+        android:shortcutLongLabel="@string/shortcut_bottle_long"
+        android:shortcutShortLabel="@string/shortcut_bottle_short">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="app.littlelog.MainActivity"
+            android:targetPackage="app.littlelog">
+            <extra
+                android:name="app.littlelog.widget.ACTION"
+                android:value="bottle" />
+        </intent>
+    </shortcut>
+
+    <shortcut
+        android:enabled="true"
+        android:shortcutId="log_pee"
+        android:shortcutLongLabel="@string/shortcut_pee_long"
+        android:shortcutShortLabel="@string/shortcut_pee_short">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="app.littlelog.MainActivity"
+            android:targetPackage="app.littlelog">
+            <extra
+                android:name="app.littlelog.widget.ACTION"
+                android:value="pee" />
+        </intent>
+    </shortcut>
+
+    <shortcut
+        android:enabled="true"
+        android:shortcutId="log_poop"
+        android:shortcutLongLabel="@string/shortcut_poop_long"
+        android:shortcutShortLabel="@string/shortcut_poop_short">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="app.littlelog.MainActivity"
+            android:targetPackage="app.littlelog">
+            <extra
+                android:name="app.littlelog.widget.ACTION"
+                android:value="poop" />
+        </intent>
+    </shortcut>
+
+    <shortcut
+        android:enabled="true"
+        android:shortcutId="log_sleep"
+        android:shortcutLongLabel="@string/shortcut_sleep_long"
+        android:shortcutShortLabel="@string/shortcut_sleep_short">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="app.littlelog.MainActivity"
+            android:targetPackage="app.littlelog">
+            <extra
+                android:name="app.littlelog.widget.ACTION"
+                android:value="sleep_toggle" />
+        </intent>
+    </shortcut>
+
+</shortcuts>

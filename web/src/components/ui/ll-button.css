@@ -1,0 +1,62 @@
+/* ll-button — primary (.go), danger (.del), link (.link), chip, big. */
+ll-button {
+  display: contents;
+}
+.go {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  display: block;
+  width: 100%;
+  margin-top: 22px;
+  padding: 22px;
+  text-align: center;
+  border-radius: 28px;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--disp);
+  font-size: 28px;
+}
+.go:active {
+  transform: scale(0.98);
+}
+.go:focus-visible {
+  outline: 4px solid var(--ink);
+  outline-offset: 3px;
+}
+.del {
+  all: unset;
+  cursor: pointer;
+  display: block;
+  text-align: center;
+  margin-top: 12px;
+  padding: 16px;
+  min-height: 56px;
+  font-weight: 600;
+  color: #e0554a;
+  width: 100%;
+  box-sizing: border-box;
+}
+.link {
+  all: unset;
+  cursor: pointer;
+  display: block;
+  margin: 16px auto 0;
+  text-align: center;
+  font-weight: 600;
+  text-decoration: underline;
+  padding: 8px;
+  min-height: 56px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.link:focus-visible,
+.del:focus-visible {
+  outline: 4px solid var(--ink);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .go {
+    transition: none;
+  }
+}

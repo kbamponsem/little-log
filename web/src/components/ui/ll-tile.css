@@ -1,0 +1,85 @@
+/* <ll-tile> — the big Today action button. */
+
+ll-tile {
+  display: contents;
+}
+
+.tile {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 132px;
+  padding: 18px 22px;
+  border-radius: 34px;
+  color: var(--on);
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.28);
+  transition: transform 0.08s, box-shadow 0.08s;
+}
+
+.tile:active {
+  transform: translateY(5px);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.28);
+}
+
+.tile .em {
+  display: flex;
+  font-size: 54px;
+  line-height: 1;
+}
+
+.tile .t {
+  font-family: var(--disp);
+  font-size: clamp(30px, 6vw, 36px);
+  line-height: 1;
+}
+
+.tile .s {
+  display: block;
+  margin-top: 6px;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.feed {
+  background: var(--feed);
+}
+
+.sleep {
+  background: var(--sleep);
+}
+
+.diaper {
+  background: var(--diaper);
+}
+
+/* A running sleep pulses gently. */
+.sleep.run {
+  animation: pulse 2.4s ease-in-out infinite;
+}
+
+/* Three-up on tablet and desktop: trim the tile so the row stays compact. */
+@media (min-width: 700px) {
+  .tile {
+    min-height: 120px;
+    gap: 12px;
+    padding: 16px 18px;
+    border-radius: 30px;
+  }
+
+  .tile .em {
+    font-size: 44px;
+  }
+
+  .tile .s {
+    font-size: 15px;
+  }
+}
+
+@keyframes pulse {
+  50% {
+    filter: brightness(1.12);
+  }
+}
