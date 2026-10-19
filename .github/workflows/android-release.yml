@@ -1,0 +1,86 @@
+name: Android release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            app/package-lock.json
+            web/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri -> target
+          key: android-release
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install NDK
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "ndk;27.1.12297006"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.1.12297006" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.1.12297006" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: |
+          npm --prefix web ci
+          npm --prefix app ci
+
+      - name: Write signing config
+        env:
+          ANDROID_KEY_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "$ANDROID_KEY_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          cat > app/src-tauri/gen/android/keystore.properties <<EOF
+          storeFile=$RUNNER_TEMP/release.jks
+          keyAlias=$ANDROID_KEY_ALIAS
+          password=$ANDROID_KEY_PASSWORD
+          EOF
+
+      - name: Build release APK
+        run: cd app && npm run android:build -- --target aarch64 armv7
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          config_version="$(awk -F'"' '/^[[:space:]]*"version"[[:space:]]*:/ { print $4; exit }' app/src-tauri/tauri.conf.json)"
+          if [ "$version" != "$config_version" ]; then
+            echo "tag is v$version but app/src-tauri/tauri.conf.json says $config_version" >&2
+            exit 1
+          fi
+
+          cp app/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk \
+             "little-log-${version}-universal.apk"
+
+          gh release create "$GITHUB_REF_NAME" \
+            "little-log-${version}-universal.apk#Little Log ${version} (arm64 + armv7)" \
+            --title "Little Log ${version}" \
+            --generate-notes
