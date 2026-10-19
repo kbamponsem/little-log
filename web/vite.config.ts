@@ -1,5 +1,7 @@
 import { defineConfig } from "vite";
 
+const host = process.env.TAURI_DEV_HOST;
+
 /**
  * Little Log frontend build.
  *
@@ -16,8 +18,12 @@ export default defineConfig({
     sourcemap: true,
   },
   server: {
+    host: host || false,
     port: 5173,
     strictPort: true,
+    hmr: host
+      ? { protocol: "ws", host, port: 5174 }
+      : undefined,
     proxy: {
       "/api": { target: "http://localhost:8080", changeOrigin: false },
     },

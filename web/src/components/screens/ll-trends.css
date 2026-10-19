@@ -14,7 +14,35 @@
 }
 
 .big-number {
+  display: block;
   font-family: var(--disp);
   font-weight: 400;
   font-size: clamp(28px, 4vw, 34px);
+}
+
+/* Shown by "Time between feeds" until two feeds give it something to average. */
+.empty-state {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.empty-state-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  background: var(--chip);
+}
+
+.empty-state b {
+  display: block;
+  font-weight: 600;
+}
+
+.empty-state .note {
+  display: block;
+  margin: 2px 0 0;
 }

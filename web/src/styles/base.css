@@ -29,7 +29,9 @@ main,
 ll-today,
 ll-history,
 ll-trends,
-ll-baby {
+ll-baby,
+ll-welcome,
+ll-settings {
   display: block;
   max-width: var(--content);
   margin: 0 auto;
@@ -39,6 +41,22 @@ ll-baby {
 /* Reading-width forms and lists look stretched at 1040px, so the settings
    screen keeps its own, narrower measure. */
 ll-baby {
+  max-width: min(var(--content), 720px);
+}
+
+/* The intro and Settings replace the tabs rather than sitting beside them, so
+   they take the same gutter but not the tab-bar clearance. */
+ll-welcome,
+ll-settings {
+  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+}
+
+/* The intro is a short single-column form; Settings is a reading-width list. */
+ll-welcome {
+  max-width: min(var(--content), 560px);
+}
+
+ll-settings {
   max-width: min(var(--content), 720px);
 }
 
@@ -68,6 +86,30 @@ h2 {
   margin: 14px 0 6px;
   font-weight: 600;
   font-size: 16px;
+}
+
+/* The cog that opens Appearance. Shared by the intro and Today, so it lives
+   here rather than in one screen's stylesheet — component CSS is global. */
+.cog {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.cog .ic {
+  display: block;
+}
+
+.cog:hover,
+.cog:focus-visible {
+  background: var(--chip);
 }
 
 /* Two fields side by side. */

@@ -1,0 +1,18 @@
+# Android 15 and later can use 16 KB memory pages, and Play requires native
+# libraries to be built for them. The NDK's linker still defaults to 4 KB, so ask
+# for 16 KB explicitly: without this the app's own library fails Android's LOAD
+# segment alignment check, and on a 16 KB device Android refuses to load it —
+# with only a "This app isn't 16 KB-compatible" notice to explain why.
+#
+# Aligning to a larger boundary is harmless on 4 KB devices.
+[target.aarch64-linux-android]
+rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]
+
+[target.armv7-linux-androideabi]
+rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]
+
+[target.i686-linux-android]
+rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]
+
+[target.x86_64-linux-android]
+rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]

@@ -142,7 +142,7 @@ pub fn drain_into(path: &Path, repo: &Repo, caregiver_id: Option<&str>) -> Resul
     }
 
     let now = now_millis();
-    let baby_id = repo.baby()?.and_then(|baby| baby.id);
+    let baby_id = repo.current_baby()?.and_then(|baby| baby.id);
     let ledger_path = applied_ledger_path(path);
     let mut applied_ids = read_ids(&ledger_path)?;
     let mut report = DrainReport::default();
@@ -249,16 +249,22 @@ fn remove(path: &Path) -> Result<()> {
 }
 
 /// The numbers the widget renders: "Last fed 1h 20m ago" and "Sleeping 42m".
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WidgetState {
+    /// Which child these numbers are about, so the widget can say whose log it
+    /// is when a household has more than one.
+    pub baby_name: String,
     pub last_feed_at: Option<Millis>,
     pub sleeping_since: Option<Millis>,
     pub feeds_today: i64,
     pub diapers_today: i64,
 }
 
-/// Compute the widget's state. `tz_offset_minutes` is the device's UTC offset,
-/// so "today" means the parent's today.
+/// Compute the widget's state for the child this device is looking at.
+///
+/// `tz_offset_minutes` is the device's UTC offset, so "today" means the
+/// parent's today. Scoped to one child: a widget that counted a sibling's feeds
+/// would be wrong in exactly the household the widget matters most in.
 pub fn widget_state(repo: &Repo, now: Millis, tz_offset_minutes: i32) -> Result<WidgetState> {
     let offset = i64::from(tz_offset_minutes) * 60_000;
     let day = 86_400_000_i64;
@@ -269,7 +275,18 @@ pub fn widget_state(repo: &Repo, now: Millis, tz_offset_minutes: i32) -> Result<
     let mut feeds_today = 0;
     let mut diapers_today = 0;
 
-    for entry in repo.entries_since(None)? {
+    let current = repo.current_baby()?;
+    state.baby_name = current
+        .as_ref()
+        .map(|baby| baby.name.clone())
+        .unwrap_or_default();
+
+    let entries = match current.as_ref().and_then(|baby| baby.id.as_deref()) {
+        Some(baby_id) => repo.entries_for(baby_id)?,
+        None => Vec::new(),
+    };
+
+    for entry in entries {
         if entry.deleted {
             continue;
         }
@@ -488,21 +505,27 @@ mod tests {
         let repo = Repo::open_in_memory().unwrap();
         let now = 1_760_000_000_000; // 2025-10-09T08:26:40Z
         let day = 86_400_000;
+        let baby_id = repo.ensure_baby("Ada").unwrap().id;
 
         let mut feed = Entry::new(EntryKind::Feed, now - 30 * 60_000);
         feed.feed_kind = Some(FeedKind::Bottle);
+        feed.baby_id = baby_id.clone();
         repo.force_entry(&feed).unwrap();
         let mut yesterday = Entry::new(EntryKind::Feed, now - day);
         yesterday.feed_kind = Some(FeedKind::Bottle);
+        yesterday.baby_id = baby_id.clone();
         repo.force_entry(&yesterday).unwrap();
         let mut diaper = Entry::new(EntryKind::Diaper, now - 60 * 60_000);
         diaper.diaper_type = Some(DiaperType::Pee);
+        diaper.baby_id = baby_id.clone();
         repo.force_entry(&diaper).unwrap();
         let mut sleep = Entry::new(EntryKind::Sleep, now - 42 * 60_000);
         sleep.ended_at = None;
+        sleep.baby_id = baby_id.clone();
         repo.force_entry(&sleep).unwrap();
 
         let state = widget_state(&repo, now, 0).unwrap();
+        assert_eq!(state.baby_name, "Ada", "the widget says whose log it is");
         assert_eq!(state.last_feed_at, Some(now - 30 * 60_000));
         assert_eq!(state.sleeping_since, Some(now - 42 * 60_000));
         assert_eq!(state.feeds_today, 1);
@@ -518,6 +541,47 @@ mod tests {
         write_widget_state(&path, &state).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(text.contains("\"feeds_today\":1"));
+        assert!(text.contains("\"baby_name\":\"Ada\""));
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn the_widget_shows_the_current_child_and_not_a_sibling() {
+        let repo = Repo::open_in_memory().unwrap();
+        let now = 1_760_000_000_000;
+        let ada = repo.ensure_baby("Ada").unwrap();
+        let bo = repo
+            .save_baby(&crate::model::Baby {
+                id: None,
+                name: "Bo".into(),
+                ..Default::default()
+            })
+            .unwrap();
+
+        let mut ada_feed = Entry::new(EntryKind::Feed, now - 10 * 60_000);
+        ada_feed.feed_kind = Some(FeedKind::Bottle);
+        ada_feed.baby_id = ada.id.clone();
+        repo.force_entry(&ada_feed).unwrap();
+
+        let mut bo_feed = Entry::new(EntryKind::Feed, now - 5 * 60_000);
+        bo_feed.feed_kind = Some(FeedKind::Bottle);
+        bo_feed.baby_id = bo.id.clone();
+        repo.force_entry(&bo_feed).unwrap();
+
+        // Ada is the current child, so the widget counts hers and not Bo's.
+        let state = widget_state(&repo, now, 0).unwrap();
+        assert_eq!(state.baby_name, "Ada");
+        assert_eq!(state.feeds_today, 1);
+        assert_eq!(
+            state.last_feed_at,
+            Some(now - 10 * 60_000),
+            "not the sibling's feed"
+        );
+
+        // Switching child switches the widget.
+        repo.set_current_baby(bo.id.as_deref().unwrap()).unwrap();
+        let state = widget_state(&repo, now, 0).unwrap();
+        assert_eq!(state.baby_name, "Bo");
+        assert_eq!(state.last_feed_at, Some(now - 5 * 60_000));
     }
 }

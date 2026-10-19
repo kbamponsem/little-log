@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/core"]
+members = ["crates/core", "crates/sync"]
 # The Tauri app is a standalone crate: keeping it out of the workspace means
 # `cargo test` at the root stays fast (no webkit/Android system deps).
 exclude = ["app/src-tauri"]

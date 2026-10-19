@@ -1,6 +1,7 @@
 package app.littlelog.widget
 
 import android.content.Context
+import android.util.Log
 import androidx.work.BackoffPolicy
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
@@ -19,20 +20,25 @@ import java.util.concurrent.TimeUnit
  */
 class WidgetDrainWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
-        val filesDir = applicationContext.filesDir.absolutePath
+        val dataDir = WidgetPaths.root(applicationContext).absolutePath
         return try {
-            WidgetBridge.nativeDrain(filesDir, tzOffsetMinutes())
-            WidgetUpdater.update(applicationContext)
+            WidgetBridge.nativeDrain(dataDir, tzOffsetMinutes())
+            // Awaited: this coroutine dies with the worker, so a detached update
+            // would be cancelled before Glance ever scheduled the redraw — which
+            // is what left a tapped entry invisible until the app was opened.
+            WidgetUpdater.updateAndWait(applicationContext)
             Result.success()
         } catch (error: Throwable) {
             // The queue is only cleared once the entries are in the database, so
             // retrying can never double-log; ids make a repeat harmless anyway.
-            WidgetUpdater.update(applicationContext)
+            Log.w(TAG, "widget drain failed; will retry", error)
+            WidgetUpdater.updateAndWait(applicationContext)
             Result.retry()
         }
     }
 
     companion object {
+        private const val TAG = "WidgetDrainWorker"
         private const val WORK_NAME = "little-log-widget-drain"
 
         /**

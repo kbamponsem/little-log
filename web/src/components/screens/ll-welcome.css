@@ -1,0 +1,99 @@
+/* First-run screen: ask who the log is for. The page measure and padding come
+   from the `ll-welcome` rule in styles/base.css. */
+
+.welcome {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.welcome .mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 24px;
+  background: var(--chip);
+  color: var(--ink);
+}
+
+/* The mark and the cog: Appearance can be set before there is a log. */
+.welcome-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.welcome h1 {
+  margin: 0;
+}
+
+.welcome .sub {
+  margin: 0;
+  line-height: 1.45;
+  opacity: 0.85;
+}
+
+.welcome .chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* A white pill on a white page would be invisible, so the call to action uses
+   the same dark-pill treatment as the rest of the app's selected controls. */
+.welcome .chip.primary,
+.welcome .chip.start {
+  background: var(--ink);
+  color: var(--paper);
+  font-weight: 600;
+}
+
+.welcome .chip[disabled] {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.welcome .error {
+  margin: 0;
+  color: #e0554a;
+}
+
+.welcome .added ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.welcome .added li {
+  padding: 2px 0;
+}
+
+/* The divider between starting a log and joining one. */
+.or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 0 12px;
+  font-size: 14px;
+  opacity: 0.7;
+}
+
+.or::before,
+.or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--chip);
+}
+
+/* Joining is the quieter of the two: most first runs are a new log. */
+.chip.join {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+}

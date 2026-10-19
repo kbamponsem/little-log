@@ -3,6 +3,7 @@ import { appendSlot } from "../../core/dom";
 import { ui } from "../../core/ui-store";
 import { store } from "../../data/store";
 import { ageStr, ago, dur } from "../../format";
+import { ic } from "../../icons";
 import { LlLogList } from "../ui/ll-log-list";
 import { LlStat } from "../ui/ll-stat";
 import { LlTile } from "../ui/ll-tile";
@@ -14,7 +15,12 @@ export class LlToday extends LLComponent {
 
   protected template(): string {
     return `
-      <h1>Little Log</h1>
+      <header class="today-head">
+        <h1 data-slot="title">Little Log</h1>
+        <button class="cog" type="button" data-action="settings" aria-label="Settings">
+          ${ic("settings", 28)}
+        </button>
+      </header>
       <p class="sub" data-slot="sub"></p>
       <div class="stats" data-slot="stats"></div>
       <div class="tiles" data-slot="tiles"></div>
@@ -35,8 +41,14 @@ export class LlToday extends LLComponent {
   protected subscribe(): void {
     this.watch(store);
     this.addEventListener("click", (event) => {
-      if ((event.target as HTMLElement).closest("[data-action='past-nap']")) {
+      const target = event.target as HTMLElement;
+      if (target.closest("[data-action='past-nap']")) {
         ui.openSheet({ name: "sleep" });
+        return;
+      }
+      if (target.closest("[data-action='settings']")) {
+        ui.openOverlay("settings");
+        return;
       }
     });
     this.addEventListener("ll-tile-press", (event) => {
@@ -46,14 +58,15 @@ export class LlToday extends LLComponent {
 
   private renderHead(): void {
     const baby = store.baby;
-    const part = baby.born ? ` · ${ageStr(baby.born)}` : "";
     const date = new Date().toLocaleDateString([], {
       weekday: "long",
       month: "short",
       day: "numeric",
     });
+    const title = this.querySelector<HTMLElement>('[data-slot="title"]');
+    if (title) title.textContent = baby.name || "Baby";
     const sub = this.querySelector<HTMLElement>('[data-slot="sub"]');
-    if (sub) sub.textContent = `${baby.name || "Baby"}${part} · ${date}`;
+    if (sub) sub.textContent = `${baby.born ? ageStr(baby.born) : "No birthday yet"} · ${date}`;
   }
 
   private renderStats(): void {

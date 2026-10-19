@@ -9,6 +9,10 @@ const SHEET_TAGS: Record<SheetRequest["name"], string> = {
   diaper: "ll-diaper-sheet",
   sleep: "ll-sleep-sheet",
   detail: "ll-detail-sheet",
+  babies: "ll-babies-sheet",
+  invite: "ll-invite-sheet",
+  join: "ll-join-sheet",
+  theme: "ll-theme-sheet",
 };
 
 /** Sheets that take configuration from the request before they open. */

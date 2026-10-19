@@ -15,8 +15,56 @@
   opacity: 0.8;
 }
 
-.invite-button {
+.invite-button,
+.join-button {
   margin-top: 8px;
+}
+
+
+.add-baby-button {
+  margin-top: 8px;
+}
+
+/* A device asking to be let in: who, and the two answers. */
+.baby-join {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 0;
+}
+
+.baby-join-who {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.baby-join-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* One child in the household list. */
+.baby-child {  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 0;
+  font-weight: 500;
+}
+
+.baby-child-name {
+  overflow-wrap: anywhere;
+}
+
+.baby-child-current {
+  font-size: 15px;
+  opacity: 0.8;
+}
+
+.baby-error {
+  color: #e0554a;
 }
 
 .delete-button {

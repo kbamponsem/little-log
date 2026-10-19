@@ -15,10 +15,19 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 little-log-core = { path = "../../crates/core" }
+little-log-sync = { path = "../../crates/sync" }
+# Kept out of the workspace so `cargo test` at the root stays fast (see root
+# Cargo.toml); the app is the only member that needs a runtime for peer sync.
+tokio = { version = "1", features = ["rt-multi-thread"] }
 base64 = "0.22"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = [] }
+# reqwest (via iroh) is built with `rustls-no-provider`, so the app must pick a
+# provider. ring is used deliberately: it cross-compiles to Android more
+# reliably than aws-lc-rs. The 0.23 line matches the rustls reqwest already uses,
+# so there is still exactly one rustls in the dependency tree.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 
 # The Android widget's headless drain runs from a WorkManager worker, which
 # reaches the core through these JNI exports (see src/widget.rs).

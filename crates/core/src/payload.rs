@@ -10,13 +10,29 @@
 //! the moment the event is signed. Nothing can re-encode these bytes behind the
 //! signature's back, so the payload needs no canonical encoding of its own.
 
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{CoreError, Result};
 use crate::model::{
-    Amount, AmountUnit, Consistency, DiaperType, Entry, EntryKind, FeedKind, Millis, PeeShade,
-    PoopColor, SleepLocation, WakeMood,
+    Amount, AmountUnit, Baby, Consistency, DiaperType, Entry, EntryKind, FeedKind, Millis,
+    PeeShade, PoopColor, SleepLocation, WakeMood,
 };
+
+/// Encode a payload for sealing. `what` names it in the error.
+fn encode<T: Serialize>(value: &T, what: &str) -> Result<Vec<u8>> {
+    serde_json::to_vec(value)
+        .map_err(|error| CoreError::data(format!("could not encode {what}: {error}")))
+}
+
+/// Decode a payload that arrived in an event.
+///
+/// Unknown fields are ignored and missing ones default, so a device running a
+/// newer build can add a field without an older one choking on it.
+fn decode<T: DeserializeOwned>(bytes: &[u8], what: &str) -> Result<T> {
+    serde_json::from_slice(bytes)
+        .map_err(|error| CoreError::invalid(format!("{what} is not valid: {error}")))
+}
 
 /// Everything a caregiver can set on an entry.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -79,22 +95,46 @@ impl EntryPayload {
 
     /// Encode for sealing into an event.
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
-        serde_json::to_vec(self)
-            .map_err(|error| CoreError::data(format!("could not encode the entry: {error}")))
+        encode(self, "the entry")
     }
 
     /// Decode a payload that arrived in an event.
-    ///
-    /// Unknown fields are ignored and missing ones default, so a device running
-    /// a newer build can add a field without an older one choking on it.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        serde_json::from_slice(bytes)
-            .map_err(|error| CoreError::invalid(format!("entry payload is not valid: {error}")))
+        decode(bytes, "entry payload")
+    }
+}
+
+/// A baby's profile: its name and birthday.
+///
+/// Deliberately not [`Baby`] — that also carries `theme`, which is a *device*
+/// preference, not something one phone gets to set on another.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BabyPayload {
+    pub name: String,
+    #[serde(default)]
+    pub born: String,
+}
+
+impl BabyPayload {
+    /// The authored half of a profile that already exists.
+    pub fn of(baby: &Baby) -> Self {
+        Self {
+            name: baby.name.clone(),
+            born: baby.born.clone(),
+        }
+    }
+
+    pub fn to_bytes(&self) -> Result<Vec<u8>> {
+        encode(self, "the baby")
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        decode(bytes, "baby profile")
     }
 }
 
 #[cfg(test)]
-mod tests {
+mod entry_tests {
     use super::*;
 
     fn entry() -> Entry {
@@ -167,5 +207,45 @@ mod tests {
             EntryPayload::from_bytes(br#"{"occurred_at":1}"#).is_err(),
             "kind is required"
         );
+    }
+}
+
+#[cfg(test)]
+mod baby_tests {
+    use super::*;
+
+    fn baby() -> Baby {
+        Baby {
+            id: Some("b1".into()),
+            name: "Ada".into(),
+            born: "2026-02-14".into(),
+        }
+    }
+
+    #[test]
+    fn a_profile_round_trips_through_its_bytes() {
+        let payload = BabyPayload::of(&baby());
+        let decoded = BabyPayload::from_bytes(&payload.to_bytes().unwrap()).unwrap();
+
+        assert_eq!(decoded.name, "Ada");
+        assert_eq!(decoded.born, "2026-02-14");
+    }
+
+    #[test]
+    fn a_profile_carries_no_id_and_no_appearance() {
+        // The event's `entry_id` is the baby's id; the theme is device-local and
+        // lives in `device_settings`, so neither is authored here.
+        let json = String::from_utf8(BabyPayload::of(&baby()).to_bytes().unwrap()).unwrap();
+
+        assert!(!json.contains("\"id\""), "id comes from the event header");
+        assert!(!json.contains("theme"), "appearance is not authored");
+    }
+
+    #[test]
+    fn a_profile_needs_only_a_name() {
+        let decoded = BabyPayload::from_bytes(br#"{"name":"Ada"}"#).unwrap();
+
+        assert_eq!(decoded.name, "Ada");
+        assert_eq!(decoded.born, "");
     }
 }

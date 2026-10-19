@@ -22,8 +22,9 @@ const BREAST_FIGURE =
 const BREAST_BOX = "217.5 125.2 588.9 775.1";
 
 /**
- * The symbol is handed to both breast options — mirrored for the right, so the
- * two are distinguishable at a glance. The labels carry the actual meaning.
+ * The symbol is handed to both breast options — mirrored for the left, left as
+ * drawn for the right, so the two are distinguishable at a glance. The labels
+ * carry the actual meaning.
  */
 function breastIcon(mirrored: boolean): string {
   const flip = mirrored ? ' transform="translate(24 0) scale(-1 1)"' : "";
@@ -52,10 +53,15 @@ export const IC = {
     '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>',
   "chart-column":
     '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
   "chevron-left": '<path d="m15 18-6-6 6-6"/>',
   "chevron-right": '<path d="m9 18 6-6-6-6"/>',
-  breast_left: breastIcon(false),
-  breast_right: breastIcon(true),
+  settings:
+    '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  breast_left: breastIcon(true),
+  breast_right: breastIcon(false),
 } as const;
 
 export type IconName = keyof typeof IC;

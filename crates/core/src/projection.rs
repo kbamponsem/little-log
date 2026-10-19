@@ -16,7 +16,7 @@ use crate::crypto::GroupKey;
 use crate::error::Result;
 use crate::event::Event;
 use crate::model::{Entry, EventKind, Millis};
-use crate::payload::EntryPayload;
+use crate::payload::{BabyPayload, EntryPayload};
 use crate::repo::Repo;
 
 /// Fold every event about one entry into the row it describes.
@@ -44,6 +44,10 @@ pub fn resolve(events: &[Event], group: &GroupKey) -> Result<Option<Entry>> {
             // A sleep is a session whose start and stop are two writes to the
             // same register, which is why a second concurrent stop cannot
             // produce a second wake-up: one of them simply loses.
+            //
+            // A profile is about a baby, not an entry, so it is not entry
+            // state even when its subject id happens to collide.
+            EventKind::Profile => continue,
             _ => {
                 // A payload we cannot open is one we do not hold the key for, or
                 // one that did not survive the trip. Skip it: the rest of the
@@ -106,7 +110,95 @@ pub fn resolve(events: &[Event], group: &GroupKey) -> Result<Option<Entry>> {
     }))
 }
 
+/// A baby as the log describes it.
+///
+/// [`Baby`] is the profile the UI sees; the projected form adds the bookkeeping
+/// a row needs (timestamps, tombstone). Appearance is not here at all: it is a
+/// device setting, so it is not something a profile event can decide.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ResolvedBaby {
+    pub id: String,
+    pub name: String,
+    pub born: String,
+    pub created_at: Millis,
+    pub updated_at: Millis,
+    pub deleted: bool,
+}
+
+/// Fold a baby's profile events into the profile they describe.
+///
+/// The same two registers as [`resolve`]: the newest profile write wins, and a
+/// delete hides it only when it is newer than that write. Arrival order cannot
+/// matter, which is what makes replicas agree without a server.
+pub fn resolve_baby(events: &[Event], group: &GroupKey) -> Result<Option<ResolvedBaby>> {
+    let mut newest_write: Option<(&Event, BabyPayload)> = None;
+    let mut newest_delete: Option<&Hlc> = None;
+    let mut earliest_write = Millis::MAX;
+    let mut latest_change = Millis::MIN;
+
+    for event in events {
+        match event.kind {
+            EventKind::Delete => {
+                if newest_delete.is_none_or(|seen| &event.hlc > seen) {
+                    newest_delete = Some(&event.hlc);
+                }
+                latest_change = latest_change.max(event.hlc.wall_ms);
+            }
+            EventKind::Profile => {
+                let Ok(plain) = event.open(group) else {
+                    continue;
+                };
+                let Ok(payload) = BabyPayload::from_bytes(&plain) else {
+                    continue;
+                };
+
+                if newest_write
+                    .as_ref()
+                    .is_none_or(|(best, _)| event.hlc > best.hlc)
+                {
+                    newest_write = Some((event, payload));
+                }
+                earliest_write = earliest_write.min(event.hlc.wall_ms);
+                latest_change = latest_change.max(event.hlc.wall_ms);
+            }
+            // An entry event is about an entry, never a profile.
+            _ => continue,
+        }
+    }
+
+    let Some((winner, payload)) = newest_write else {
+        return Ok(None);
+    };
+
+    Ok(Some(ResolvedBaby {
+        id: winner.entry_id.clone(),
+        name: payload.name,
+        born: payload.born,
+        created_at: if earliest_write == Millis::MAX {
+            winner.hlc.wall_ms
+        } else {
+            earliest_write
+        },
+        updated_at: latest_change,
+        deleted: newest_delete.is_some_and(|deleted_at| deleted_at > &winner.hlc),
+    }))
+}
+
 impl Repo {
+    /// Fold one event into the row it describes, whichever kind of row that is.
+    ///
+    /// The receiving side needs this: an event that has just arrived in the log
+    /// is not visible anywhere until it is folded, and a profile event describes
+    /// a *child* rather than an entry, so the caller must not have to know which
+    /// it is holding.
+    pub fn project(&self, event: &Event, group: &GroupKey) -> Result<()> {
+        match event.kind {
+            EventKind::Profile => self.project_baby(&event.entry_id, group),
+            EventKind::Delete => self.project_entry(&event.entry_id, group),
+            _ => self.project_entry(&event.entry_id, group),
+        }
+    }
+
     /// Fold one entry's events back into its row.
     ///
     /// Call this after inserting anything that touches an entry, however many
@@ -120,24 +212,81 @@ impl Repo {
         Ok(())
     }
 
-    /// Rebuild every row from the log, and return how many entries that leaves.
+    /// Fold one baby's profile events back into its row.
+    ///
+    /// The row lives in `babies` alongside the entries, so a profile is
+    /// projected exactly like an entry: re-read the subject's events, fold, and
+    /// overwrite what the fold decides.
+    pub fn project_baby(&self, baby_id: &str, group: &GroupKey) -> Result<()> {
+        let events = self.log().for_entry(baby_id)?;
+        if let Some(baby) = resolve_baby(&events, group)? {
+            self.force_baby(&baby)?;
+        }
+        Ok(())
+    }
+
+    /// Write a projected baby row.
+    ///
+    /// Only what a profile can decide is written: name and birthday. The theme
+    /// is not here at all — it lives in `device_settings`, so folding a profile
+    /// that arrived from another phone cannot change how this one looks.
+    pub fn force_baby(&self, baby: &ResolvedBaby) -> Result<()> {
+        self.connection().execute(
+            "INSERT INTO babies (id, name, born, created_at, updated_at, deleted)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name,
+                born = excluded.born,
+                created_at = excluded.created_at,
+                updated_at = excluded.updated_at,
+                deleted = excluded.deleted",
+            rusqlite::params![
+                baby.id,
+                baby.name,
+                baby.born,
+                baby.created_at,
+                baby.updated_at,
+                i64::from(baby.deleted),
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Rebuild every row from the log, and return how many rows that leaves.
     ///
     /// Equal by construction to applying events one at a time, because
-    /// [`resolve`] folds an entry's whole event set either way. A test holds
-    /// that claim to account rather than leaving it as a comment.
+    /// [`resolve`] and [`resolve_baby`] fold a subject's whole event set either
+    /// way. A test holds that claim to account rather than leaving it as a
+    /// comment.
     pub fn rebuild_projection(&self, group: &GroupKey) -> Result<usize> {
+        // Profile events are keyed by the baby's id, entry events by the
+        // entry's, so they are grouped separately and folded by their own rule.
         let mut by_entry: BTreeMap<String, Vec<Event>> = BTreeMap::new();
+        let mut by_baby: BTreeMap<String, Vec<Event>> = BTreeMap::new();
         for event in self.log().all()? {
-            by_entry
-                .entry(event.entry_id.clone())
-                .or_default()
-                .push(event);
+            if event.kind == EventKind::Profile {
+                by_baby
+                    .entry(event.entry_id.clone())
+                    .or_default()
+                    .push(event);
+            } else {
+                by_entry
+                    .entry(event.entry_id.clone())
+                    .or_default()
+                    .push(event);
+            }
         }
 
         let mut written = 0;
         for (_, events) in by_entry {
             if let Some(entry) = resolve(&events, group)? {
                 self.force_entry(&entry)?;
+                written += 1;
+            }
+        }
+        for (_, events) in by_baby {
+            if let Some(baby) = resolve_baby(&events, group)? {
+                self.force_baby(&baby)?;
                 written += 1;
             }
         }
@@ -149,7 +298,7 @@ impl Repo {
 mod tests {
     use super::*;
     use crate::crypto::DeviceKey;
-    use crate::model::{AmountUnit, EntryKind, FeedKind};
+    use crate::model::{AmountUnit, EntryKind, FeedKind, Theme};
 
     /// A device with its own database: a key to sign with, a group key to seal
     /// with, and a log to fold.
@@ -174,6 +323,18 @@ mod tests {
 
         /// Author an event without storing it.
         fn author(&self, entry_id: &str, kind: EventKind, at: i64, amount: i64) -> Event {
+            self.author_for("baby-1", entry_id, kind, at, amount)
+        }
+
+        /// Author an entry event for a chosen baby (the event's topic).
+        fn author_for(
+            &self,
+            baby_id: &str,
+            entry_id: &str,
+            kind: EventKind,
+            at: i64,
+            amount: i64,
+        ) -> Event {
             let mut payload = EntryPayload::of(&Entry::new(EntryKind::Feed, at));
             payload.kind = EntryKind::Feed;
             payload.feed_kind = Some(FeedKind::Bottle);
@@ -183,7 +344,7 @@ mod tests {
             Event::seal(
                 &self.key,
                 &self.group,
-                "baby-1",
+                baby_id,
                 entry_id,
                 kind,
                 Hlc::new(at, 0, self.key.id()),
@@ -192,11 +353,43 @@ mod tests {
             .unwrap()
         }
 
-        fn delete(&self, entry_id: &str, at: i64) -> Event {
+        /// Author a profile event for `baby_id`; its subject id is the baby's.
+        fn profile(&self, baby_id: &str, kind: EventKind, at: i64, name: &str) -> Event {
+            let payload = BabyPayload {
+                name: name.to_string(),
+                born: "2026-02-14".to_string(),
+            };
             Event::seal(
                 &self.key,
                 &self.group,
-                "baby-1",
+                baby_id,
+                baby_id,
+                kind,
+                Hlc::new(at, 0, self.key.id()),
+                &payload.to_bytes().unwrap(),
+            )
+            .unwrap()
+        }
+
+        /// Store a profile event and fold it into the baby row.
+        fn apply_baby(&self, event: &Event) -> bool {
+            let inserted = self.repo.log().insert(event).unwrap();
+            self.repo
+                .project_baby(&event.entry_id, &self.group)
+                .unwrap();
+            inserted
+        }
+
+        fn delete(&self, entry_id: &str, at: i64) -> Event {
+            self.delete_in("baby-1", entry_id, at)
+        }
+
+        /// Tombstone a subject on a chosen baby's topic.
+        fn delete_in(&self, baby_id: &str, entry_id: &str, at: i64) -> Event {
+            Event::seal(
+                &self.key,
+                &self.group,
+                baby_id,
                 entry_id,
                 EventKind::Delete,
                 Hlc::new(at, 0, self.key.id()),
@@ -474,5 +667,167 @@ mod tests {
         assert!(!peer.apply(&create), "the log already had it");
         assert_eq!(peer.rows(), 1);
         assert_eq!(peer.row("e1").unwrap().amount, Some(100));
+    }
+
+    /* ------------------------------------------------------------- babies */
+
+    #[test]
+    fn a_profile_folds_into_a_baby_row() {
+        let peer = Peer::new();
+
+        peer.apply_baby(&peer.profile("b1", EventKind::Profile, 1_000, "Ada"));
+
+        let babies = peer.repo.babies().unwrap();
+        assert_eq!(babies.len(), 1);
+        assert_eq!(babies[0].id.as_deref(), Some("b1"));
+        assert_eq!(babies[0].name, "Ada");
+        assert_eq!(babies[0].born, "2026-02-14");
+    }
+
+    #[test]
+    fn the_newest_profile_write_names_the_baby() {
+        // Same rule as entries: the newest write wins, whatever the order it
+        // arrived in. Two phones renaming a baby must not disagree.
+        let peer = Peer::new();
+        let first = peer.profile("b1", EventKind::Profile, 1_000, "Ada");
+        let second = peer.profile("b1", EventKind::Profile, 2_000, "Ada Lovelace");
+
+        let forwards = resolve_baby(&[first.clone(), second.clone()], &peer.group)
+            .unwrap()
+            .unwrap();
+        let backwards = resolve_baby(&[second, first], &peer.group)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(forwards, backwards);
+        assert_eq!(forwards.name, "Ada Lovelace");
+        assert_eq!(forwards.created_at, 1_000);
+        assert_eq!(forwards.updated_at, 2_000);
+    }
+
+    #[test]
+    fn a_profile_tombstone_hides_the_baby_but_keeps_its_entries() {
+        let peer = Peer::new();
+        peer.apply_baby(&peer.profile("b1", EventKind::Profile, 1_000, "Ada"));
+        peer.apply(&peer.author_for("b1", "e1", EventKind::Create, 1_500, 100));
+
+        peer.apply_baby(&peer.delete_in("b1", "b1", 2_000));
+
+        assert!(peer.repo.babies().unwrap().is_empty());
+        assert!(peer.repo.baby_by_id("b1").unwrap().is_none());
+        assert_eq!(
+            peer.repo.entries_for("b1").unwrap().len(),
+            1,
+            "the log is shared; tombstoning a profile is not a purge"
+        );
+    }
+
+    #[test]
+    fn two_babies_keep_their_entries_apart() {
+        let peer = Peer::new();
+        peer.apply_baby(&peer.profile("b1", EventKind::Profile, 1_000, "Ada"));
+        peer.apply_baby(&peer.profile("b2", EventKind::Profile, 2_000, "Bo"));
+        peer.apply(&peer.author_for("b1", "e1", EventKind::Create, 3_000, 100));
+        peer.apply(&peer.author_for("b2", "e2", EventKind::Create, 4_000, 120));
+
+        assert_eq!(peer.repo.babies().unwrap().len(), 2);
+        assert_eq!(peer.repo.entries_for("b1").unwrap().len(), 1);
+        assert_eq!(peer.repo.entries_for("b2").unwrap().len(), 1);
+        assert_eq!(peer.repo.entries().unwrap().len(), 2, "both, unfiltered");
+    }
+
+    #[test]
+    fn a_running_sleep_belongs_to_one_baby() {
+        let peer = Peer::new();
+        peer.apply_baby(&peer.profile("b1", EventKind::Profile, 1_000, "Ada"));
+        peer.apply_baby(&peer.profile("b2", EventKind::Profile, 1_000, "Bo"));
+
+        let mut asleep = Entry::new(EntryKind::Sleep, 2_000);
+        asleep.id = "s1".into();
+        asleep.baby_id = Some("b1".into());
+        let event = Event::seal(
+            &peer.key,
+            &peer.group,
+            "b1",
+            "s1",
+            EventKind::SleepStart,
+            Hlc::new(2_000, 0, peer.key.id()),
+            &EntryPayload::of(&asleep).to_bytes().unwrap(),
+        )
+        .unwrap();
+        peer.apply(&event);
+
+        assert!(peer.repo.running_sleep_for("b1").unwrap().is_some());
+        assert!(
+            peer.repo.running_sleep_for("b2").unwrap().is_none(),
+            "Bo is not the one asleep"
+        );
+    }
+
+    #[test]
+    fn a_projected_profile_leaves_this_devices_theme_alone() {
+        // Appearance lives in `device_settings`, which no profile event touches.
+        let peer = Peer::new();
+        peer.repo.save_device_theme(Theme::Dark).unwrap();
+        let baby = peer.repo.ensure_baby("Ada").unwrap();
+        let id = baby.id.clone().unwrap();
+
+        peer.apply_baby(&peer.profile(&id, EventKind::Profile, 2_000, "Ada Lovelace"));
+
+        assert_eq!(
+            peer.repo.baby_by_id(&id).unwrap().unwrap().name,
+            "Ada Lovelace"
+        );
+        assert_eq!(peer.repo.device_theme().unwrap(), Theme::Dark);
+    }
+
+    #[test]
+    fn one_event_folds_into_the_row_it_describes() {
+        // What a peer's event needs before it is visible: the profile creates a
+        // child, an entry write creates the row.
+        let peer = Peer::new();
+        let profile = peer.profile("b1", EventKind::Profile, 1_000, "Ada");
+        let entry = peer.author_for("b1", "e1", EventKind::Create, 2_000, 100);
+
+        for event in [&profile, &entry] {
+            peer.repo.log().insert(event).unwrap();
+            peer.repo.project(event, &peer.group).unwrap();
+        }
+
+        assert_eq!(peer.repo.babies().unwrap().len(), 1, "the child arrived");
+        assert_eq!(peer.repo.babies().unwrap()[0].name, "Ada");
+        assert_eq!(
+            peer.repo.entries().unwrap().len(),
+            1,
+            "and so did the entry"
+        );
+    }
+
+    #[test]
+    fn a_clean_rebuild_restores_every_baby_and_entry() {
+        let author = Peer::new();
+        let events = [
+            author.profile("b1", EventKind::Profile, 1_000, "Ada"),
+            author.profile("b2", EventKind::Profile, 1_100, "Bo"),
+            author.author("e1", EventKind::Create, 2_000, 100),
+            author.author("e2", EventKind::Create, 2_100, 120),
+        ];
+
+        let rebuilt = Peer::with_group(&author.group);
+        for event in events.iter().rev() {
+            rebuilt.repo.log().insert(event).unwrap();
+        }
+        let written = rebuilt.repo.rebuild_projection(&rebuilt.group).unwrap();
+
+        assert_eq!(written, 4, "two babies and two entries");
+        let names: Vec<String> = rebuilt
+            .repo
+            .babies()
+            .unwrap()
+            .into_iter()
+            .map(|baby| baby.name)
+            .collect();
+        assert_eq!(names, vec!["Ada", "Bo"], "oldest first");
+        assert_eq!(rebuilt.repo.entries().unwrap().len(), 2);
     }
 }

@@ -15,6 +15,7 @@ import "./ll-chip-group";
 import "./ll-day-nav";
 import "./ll-entry-row";
 import "./ll-field";
+import "./ll-join-prompt";
 import "./ll-log-list";
 import "./ll-photo-grid";
 import "./ll-photo-picker";

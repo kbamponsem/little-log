@@ -42,6 +42,11 @@ impl WidgetPaths {
         self.data_dir.join("pending_actions.json")
     }
 
+    /// The action a widget tap wants the UI to open, handed over by Kotlin.
+    pub fn pending_action(&self) -> PathBuf {
+        self.data_dir.join("pending_action.txt")
+    }
+
     /// What Glance renders: last feed, sleeping-since, today's counts.
     pub fn state(&self) -> PathBuf {
         self.data_dir.join("widget_state.json")
@@ -78,6 +83,34 @@ impl WidgetPaths {
             .unwrap_or_else(|| files_dir.to_path_buf());
         Self::new(root)
     }
+}
+
+/// Take the action a widget tap asked the app to open, if one is waiting.
+///
+/// Read-and-delete, so the sheet opens once rather than on every resume. The tap
+/// itself logs nothing: the UI opens that section's sheet and the entry is
+/// written when the user saves it.
+pub fn take_pending_action(paths: &WidgetPaths) -> Result<Option<String>> {
+    let path = paths.pending_action();
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(little_log_core::CoreError::io(
+                path.display().to_string(),
+                error,
+            ))
+        }
+    };
+    // Gone whether or not it turns out to be usable, so a bad value cannot wedge
+    // the app into reopening the same sheet forever.
+    let _ = std::fs::remove_file(&path);
+
+    let action = text.trim();
+    if action.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(action.to_string()))
 }
 
 /// Drain queued one-tap actions and rewrite the widget state.
@@ -220,9 +253,10 @@ mod tests {
         let root = std::env::temp_dir().join(format!("little-log-sleep-{}", now_millis()));
         let paths = WidgetPaths::new(&root);
         let repo = paths.open_repo().unwrap();
-        repo.ensure_baby("Baby").unwrap();
+        let baby_id = repo.ensure_baby("Baby").unwrap().id;
         let mut sleep = Entry::new(EntryKind::Sleep, now_millis() - 42 * 60_000);
         sleep.ended_at = None;
+        sleep.baby_id = baby_id;
         repo.force_entry(&sleep).unwrap();
 
         let state = refresh(&paths, 0).unwrap();

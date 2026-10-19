@@ -112,13 +112,35 @@ impl<'a> EventLog<'a> {
     /// from one device compare on `(wall_ms, counter)` alone, exactly as merge
     /// order requires.
     pub fn heads(&self) -> Result<Vec<Hlc>> {
-        let mut statement = self.conn.prepare(
-            "SELECT wall_ms, counter, node FROM events ORDER BY wall_ms DESC, counter DESC, node DESC",
-        )?;
-        let rows = statement.query_map([], |row| {
-            Ok(Hlc::new(row.get(0)?, row.get(1)?, row.get::<_, String>(2)?))
-        })?;
+        self.heads_for(None)
+    }
 
+    /// The same vector restricted to one topic.
+    ///
+    /// This is what a per-baby exchange must compare: a device's newest event
+    /// *anywhere* says nothing about the topic a peer is behind on, and using
+    /// the global vector would silently skip a topic's older events.
+    pub fn heads_for_topic(&self, topic: &str) -> Result<Vec<Hlc>> {
+        self.heads_for(Some(topic))
+    }
+
+    fn heads_for(&self, topic: Option<&str>) -> Result<Vec<Hlc>> {
+        let filter = if topic.is_some() {
+            " WHERE topic = ?1"
+        } else {
+            ""
+        };
+        let sql = format!(
+            "SELECT wall_ms, counter, node FROM events{filter}
+             ORDER BY wall_ms DESC, counter DESC, node DESC"
+        );
+        let mut statement = self.conn.prepare(&sql)?;
+        let rows = match topic {
+            Some(topic) => statement.query_map(params![topic], hlc_from_row)?,
+            None => statement.query_map([], hlc_from_row)?,
+        };
+
+        // One head per node: the first (newest) row wins, the rest are noise.
         let mut seen: Vec<Hlc> = Vec::new();
         for head in rows {
             let head = head?;
@@ -134,13 +156,26 @@ impl<'a> EventLog<'a> {
     /// This is the whole of anti-entropy: send the reply, or merge it straight
     /// into the local log — both are safe, because insertion is set union.
     pub fn missing(&self, their_heads: &[Hlc]) -> Result<Vec<Event>> {
+        self.missing_for(None, their_heads)
+    }
+
+    /// The same gap, restricted to one topic.
+    pub fn missing_for_topic(&self, topic: &str, their_heads: &[Hlc]) -> Result<Vec<Event>> {
+        self.missing_for(Some(topic), their_heads)
+    }
+
+    fn missing_for(&self, topic: Option<&str>, their_heads: &[Hlc]) -> Result<Vec<Event>> {
         let known: HashMap<&str, &Hlc> = their_heads
             .iter()
             .map(|head| (head.node.as_str(), head))
             .collect();
 
-        Ok(self
-            .all()?
+        let events = match topic {
+            Some(topic) => self.for_topic(topic)?,
+            None => self.all()?,
+        };
+
+        Ok(events
             .into_iter()
             .filter(|event| match known.get(event.hlc.node.as_str()) {
                 // A device they have never heard from: send everything.
@@ -149,6 +184,14 @@ impl<'a> EventLog<'a> {
             })
             .collect())
     }
+}
+
+fn hlc_from_row(row: &Row<'_>) -> rusqlite::Result<Hlc> {
+    Ok(Hlc::new(
+        row.get::<_, i64>(0)?,
+        row.get::<_, u32>(1)?,
+        row.get::<_, String>(2)?,
+    ))
 }
 
 fn event_from_row(row: &Row<'_>) -> rusqlite::Result<Event> {

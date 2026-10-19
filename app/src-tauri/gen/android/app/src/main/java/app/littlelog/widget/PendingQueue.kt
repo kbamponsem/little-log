@@ -30,7 +30,7 @@ object PendingQueue {
     fun append(context: Context, action: String, at: Long = System.currentTimeMillis()): String {
         val id = uuidV7()
         synchronized(lock) {
-            val file = File(context.filesDir, FILE_NAME)
+            val file = File(WidgetPaths.root(context), FILE_NAME)
             val queue = read(file)
             queue.put(
                 JSONObject()
@@ -44,7 +44,8 @@ object PendingQueue {
     }
 
     /** How many taps are waiting (used by tests and diagnostics). */
-    fun size(context: Context): Int = synchronized(lock) { read(File(context.filesDir, FILE_NAME)).length() }
+    fun size(context: Context): Int =
+        synchronized(lock) { read(File(WidgetPaths.root(context), FILE_NAME)).length() }
 
     private fun read(file: File): JSONArray =
         if (file.exists()) {

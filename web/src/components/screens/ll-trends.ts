@@ -4,6 +4,7 @@ import { ALERT_POOP_COLORS, POOP_COLORS, labelOf } from "../../data/model";
 import type { PoopColor } from "../../data/model";
 import { store } from "../../data/store";
 import { dur, esc } from "../../format";
+import { ic } from "../../icons";
 import { LlBarChart } from "../ui/ll-bar-chart";
 import "./ll-trends.css";
 
@@ -45,7 +46,7 @@ export class LlTrends extends LLComponent {
     const gap =
       feedTimes.length > 1
         ? dur((feedTimes[feedTimes.length - 1] - feedTimes[0]) / (feedTimes.length - 1))
-        : "Not enough data";
+        : null;
 
     const poop = new Map<PoopColor, number>();
     for (const entry of store.entries) {
@@ -63,9 +64,7 @@ export class LlTrends extends LLComponent {
     const cards = this.querySelector<HTMLElement>('[data-slot="cards"]');
     if (!cards) return;
     cards.replaceChildren(
-      fromHtml(
-        `<section class="card"><h2 class="ch">Time between feeds</h2><b class="big-number">${esc(gap)}</b><small class="note">on average</small></section>`,
-      ),
+      fromHtml(gapCard(gap)),
       chart("Feeds per day", "milk", feeds, days, "var(--feed)"),
       chart("Hours slept per day", "moon", hours, days, "var(--sleep)", 1),
       chart("Diapers per day", "droplet", diapers, days, "var(--diaper)"),
@@ -84,6 +83,22 @@ export class LlTrends extends LLComponent {
   protected subscribe(): void {
     this.watch(store);
   }
+}
+
+/** The average gap between feeds, or an empty state until there are two. */
+function gapCard(gap: string | null): string {
+  const body = gap
+    ? `<b class="big-number">${esc(gap)}</b><small class="note">on average</small>`
+    : `
+      <div class="empty-state">
+        <span class="empty-state-icon">${ic("clock", 24)}</span>
+        <span>
+          <b>Not enough data yet</b>
+          <small class="note">Log two or more feeds and the average gap appears here.</small>
+        </span>
+      </div>
+    `;
+  return `<section class="card"><h2 class="ch">Time between feeds</h2>${body}</section>`;
 }
 
 function chart(

@@ -2,13 +2,17 @@
    Light is the default; `data-theme` on <html> overrides the OS preference. */
 
 :root {
-  --bg: #4fae7e;
-  --ink: #0f2418;
-  --paper: #e9f6ee;
+  /* Light: clear and airy. The colour lives in the tiles and the type, rather
+     than in a wash of green over the whole page. `--paper` is both the surface
+     colour (cards, sheets, tab bar) and the light colour used for text on the
+     dark pills, so the two have to stay in step. */
+  --bg: #eef1ef;
+  --ink: #16211c;
+  --paper: #ffffff;
   --feed: #f7e9a6;
   --sleep: #b9c8f5;
   --diaper: #f6b5c4;
-  --chip: #ffffffaa;
+  --chip: #0f24181a;
   --on: #0f2418;
   --onink: #e9f6ee;
 

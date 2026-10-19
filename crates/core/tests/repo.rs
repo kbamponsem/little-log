@@ -35,13 +35,31 @@ fn the_baby_profile_is_editable() {
     let mut baby = repo.ensure_baby("Baby").unwrap();
     baby.name = "Ada".into();
     baby.born = "2026-03-02".into();
-    baby.theme = Theme::Dark;
 
     let saved = repo.save_baby(&baby).unwrap();
     assert_eq!(saved.name, "Ada");
     assert_eq!(saved.born, "2026-03-02");
-    assert_eq!(saved.theme, Theme::Dark);
-    assert_eq!(repo.baby().unwrap().unwrap().theme, Theme::Dark);
+}
+
+#[test]
+fn the_device_theme_is_a_setting_not_part_of_a_baby() {
+    let repo = Repo::open_in_memory().unwrap();
+    repo.ensure_baby("Baby").unwrap();
+
+    assert_eq!(
+        repo.device_theme().unwrap(),
+        Theme::Dark,
+        "a fresh device starts dark"
+    );
+
+    repo.save_device_theme(Theme::Dark).unwrap();
+
+    assert_eq!(repo.device_theme().unwrap(), Theme::Dark);
+    assert_eq!(
+        repo.baby().unwrap().unwrap().name,
+        "Baby",
+        "the baby is untouched"
+    );
 }
 
 #[test]
@@ -329,27 +347,53 @@ fn csv_export_round_trips_from_the_repository() {
 }
 
 #[test]
-fn saving_a_baby_without_an_id_updates_the_existing_one() {
+fn a_baby_without_an_id_is_a_new_baby() {
     let repo = Repo::open_in_memory().unwrap();
     repo.ensure_baby("Baby").unwrap();
 
-    // What a client that only knows the profile fields sends.
-    let patch = Baby {
+    // A profile with no id is a second baby, not a patch of the first.
+    let twin = Baby {
         id: None,
         name: "Ada".into(),
         born: "2026-03-02".into(),
-        theme: Theme::Dark,
     };
-    let saved = repo.save_baby(&patch).unwrap();
-    assert_eq!(saved.name, "Ada");
+    let saved = repo.save_baby(&twin).unwrap();
 
-    // Still exactly one baby, and it is the updated row.
-    let babies: i64 = repo
-        .connection()
-        .query_row("SELECT COUNT(*) FROM babies", [], |row| row.get(0))
+    assert!(saved.id.is_some(), "the new baby got its own id");
+    assert_eq!(repo.babies().unwrap().len(), 2);
+    assert_eq!(repo.baby().unwrap().unwrap().name, "Baby", "oldest first");
+}
+
+#[test]
+fn saving_a_baby_by_id_updates_only_that_one() {
+    let repo = Repo::open_in_memory().unwrap();
+    let first = repo.ensure_baby("Ada").unwrap();
+    let second = repo
+        .save_baby(&Baby {
+            id: None,
+            name: "Bo".into(),
+            ..Baby::default()
+        })
         .unwrap();
-    assert_eq!(babies, 1);
-    assert_eq!(repo.baby().unwrap().unwrap().name, "Ada");
+
+    let saved = repo
+        .save_baby(&Baby {
+            name: "Ada Lovelace".into(),
+            ..first.clone()
+        })
+        .unwrap();
+
+    assert_eq!(saved.name, "Ada Lovelace");
+    assert_eq!(saved.id, first.id);
+    assert_eq!(
+        repo.baby_by_id(second.id.as_deref().unwrap())
+            .unwrap()
+            .unwrap()
+            .name,
+        "Bo",
+        "the other baby is untouched"
+    );
+    assert_eq!(repo.babies().unwrap().len(), 2);
 }
 
 #[test]
@@ -358,5 +402,130 @@ fn a_baby_with_a_blank_name_is_still_a_baby() {
     let baby = Baby::default();
     let saved = repo.save_baby(&baby).unwrap();
     assert_eq!(saved.name, "Baby");
-    assert_eq!(saved.theme, Theme::Auto);
+}
+
+#[test]
+fn there_is_no_current_child_until_one_is_added() {
+    let repo = Repo::open_in_memory().unwrap();
+
+    assert!(repo.babies().unwrap().is_empty());
+    assert_eq!(
+        repo.current_baby().unwrap(),
+        None,
+        "the intro screen keys off exactly this"
+    );
+}
+
+#[test]
+fn the_device_points_at_a_child_and_defaults_to_the_first() {
+    let repo = Repo::open_in_memory().unwrap();
+    let ada = repo.ensure_baby("Ada").unwrap();
+    let bo = repo
+        .save_baby(&Baby {
+            id: None,
+            name: "Bo".into(),
+            ..Baby::default()
+        })
+        .unwrap();
+
+    // No pointer yet: the first child, which is what an upgrade lands on.
+    assert_eq!(repo.current_baby().unwrap(), Some(ada.clone()));
+
+    repo.set_current_baby(bo.id.as_deref().unwrap()).unwrap();
+    assert_eq!(repo.current_baby().unwrap(), Some(bo));
+
+    // A device preference: pointing at a child is not a change to the children.
+    assert_eq!(repo.babies().unwrap().len(), 2);
+    assert_eq!(repo.baby().unwrap().unwrap().name, "Ada");
+}
+
+#[test]
+fn a_dangling_child_pointer_falls_back_to_the_first_child() {
+    let repo = Repo::open_in_memory().unwrap();
+    let ada = repo.ensure_baby("Ada").unwrap();
+
+    repo.set_current_baby("00000000-0000-7000-8000-0000000000ff")
+        .unwrap();
+
+    assert_eq!(repo.current_baby().unwrap(), Some(ada));
+}
+
+#[test]
+fn every_child_has_a_group_key_so_its_profile_can_be_written() {
+    let repo = Repo::open_in_memory().unwrap();
+    let baby = repo.ensure_baby("Ada").unwrap();
+    let id = baby.id.clone().unwrap();
+    assert!(
+        repo.group_key(&id).unwrap().is_some(),
+        "a child without a key can be listed but never edited"
+    );
+
+    let key = repo.device_key().unwrap();
+    let mut clock = repo.clock(key.id()).unwrap();
+    let mut renamed = baby.clone();
+    renamed.name = "Ada Lovelace".into();
+
+    let saved = repo.save_profile(&key, &mut clock, &renamed).unwrap();
+    assert_eq!(saved.name, "Ada Lovelace");
+    assert_eq!(repo.current_baby().unwrap().unwrap().name, "Ada Lovelace");
+}
+
+#[test]
+fn upgrading_attaches_orphan_entries_and_points_at_the_child() {
+    let dir = std::env::temp_dir().join(format!("little-log-v6-{}", validate::now_millis()));
+    let path = dir.join("little-log.sqlite3");
+    let baby_id = {
+        let repo = Repo::open(&path).unwrap();
+        let baby_id = repo.ensure_baby("Ada").unwrap().id.clone().unwrap();
+
+        // An entry written back when entries did not carry a child.
+        let mut orphan = Entry::new(EntryKind::Feed, 1_000);
+        orphan.baby_id = None;
+        orphan.updated_at = 1_000;
+        repo.force_entry(&orphan).unwrap();
+
+        // Rewind to the schema just before the pointer existed.
+        repo.connection()
+            .execute_batch(
+                "ALTER TABLE device_settings DROP COLUMN current_baby_id;
+                 PRAGMA user_version = 5;",
+            )
+            .unwrap();
+
+        baby_id
+    };
+
+    {
+        let repo = Repo::open(&path).unwrap();
+        assert_eq!(
+            repo.current_baby().unwrap().unwrap().id.as_deref(),
+            Some(baby_id.as_str()),
+            "an existing user is not asked to add a baby they already have"
+        );
+        assert_eq!(
+            repo.entries_for(&baby_id).unwrap().len(),
+            1,
+            "the orphan was attached to the only child there is"
+        );
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_peer_address_is_remembered_once_per_child() {
+    let repo = Repo::open_in_memory().unwrap();
+
+    repo.save_peer("baby-1", "ticket-a").unwrap();
+    repo.save_peer("baby-1", "ticket-a").unwrap(); // re-learning is a no-op
+    repo.save_peer("baby-1", "ticket-b").unwrap(); // the same device moves network
+    repo.save_peer("baby-2", "ticket-c").unwrap();
+    repo.save_peer("baby-1", "  ").unwrap(); // nothing to remember
+
+    assert_eq!(
+        repo.peers_for("baby-1").unwrap(),
+        vec!["ticket-a", "ticket-b"]
+    );
+    assert_eq!(repo.peers_for("baby-2").unwrap(), vec!["ticket-c"]);
+    assert_eq!(repo.peers_for("baby-3").unwrap().len(), 0);
+    assert_eq!(repo.peers().unwrap().len(), 3, "distinct across children");
 }

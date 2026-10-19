@@ -143,7 +143,7 @@ pub fn to_hex(bytes: &[u8]) -> String {
 
 /// Parse lowercase or uppercase hex. `None` on any invalid character or an odd
 /// length — the caller treats that as a bad signature.
-fn from_hex(text: &str) -> Option<Vec<u8>> {
+pub(crate) fn from_hex(text: &str) -> Option<Vec<u8>> {
     if !text.len().is_multiple_of(2) {
         return None;
     }

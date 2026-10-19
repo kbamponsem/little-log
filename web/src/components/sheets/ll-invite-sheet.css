@@ -1,0 +1,23 @@
+/* The invite: a scannable code, and the link underneath it. */
+
+.invite-code {
+  /* Explicitly full width and centred rather than relying on the sheet's own
+     layout: the code is the thing a parent holds their phone up to, and it must
+     sit in the middle of the view whatever the container decides to do. */
+  display: grid;
+  width: 100%;
+  justify-items: center;
+  gap: 10px;
+  margin: 8px 0 14px;
+}
+
+.invite-code canvas {
+  display: block;
+  margin: 0 auto;
+  width: 260px;
+  height: 260px;
+  max-width: 70vw;
+  max-height: 70vw;
+  border-radius: 14px;
+  background: #fff;
+}

@@ -6,11 +6,18 @@ import androidx.glance.action.ActionParameters
 import androidx.glance.appwidget.action.ActionCallback
 
 /**
- * A widget tap: queue the action and ask for a drain.
+ * A widget tap: apply the action and let Glance redraw.
  *
- * Glance runs this in the app process through its broadcast trampoline — no
- * activity, no WebView, nothing on screen. The WorkManager worker then applies
- * the tap in the Rust core.
+ * Glance already runs this in the app process through its broadcast trampoline
+ * — no activity, no WebView, nothing on screen — so the Rust core is called
+ * here rather than being left to a WorkManager worker. That matters for more
+ * than latency: Glance repaints the widget when an action returns, and a redraw
+ * requested from a worker arrives while that session is still queued (Glance
+ * dedupes per widget), so the numbers stayed a tap behind until the app was
+ * opened. Applying the tap first means the repaint reads the new state.
+ *
+ * The queue is still the safety net: if the direct drain fails, the action
+ * stays queued and the worker retries it (ids make a repeat harmless).
  */
 class LogActionCallback : ActionCallback {
     override suspend fun onAction(
@@ -22,9 +29,20 @@ class LogActionCallback : ActionCallback {
         if (!WidgetActions.isSupported(action)) return
 
         PendingQueue.append(context, action)
-        WidgetDrainWorker.schedule(context)
-        // Reflect the new state as soon as the drain lands.
-        WidgetUpdater.update(context)
+
+        val drained = runCatching {
+            WidgetBridge.nativeDrain(
+                WidgetPaths.root(context).absolutePath,
+                WidgetDrainWorker.tzOffsetMinutes(),
+            )
+        }
+        if (drained.isFailure) {
+            WidgetDrainWorker.schedule(context)
+            return
+        }
+        // Redraw now that the entry is stored — awaited, because this coroutine
+        // is the only thing keeping the request alive.
+        WidgetUpdater.updateAndWait(context)
     }
 
     companion object {

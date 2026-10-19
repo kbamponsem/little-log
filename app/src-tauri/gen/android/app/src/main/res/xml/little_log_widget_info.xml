@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Home-screen widget: 4x2, one-tap logging, no app launch. -->
+<!-- Home-screen widget: 4x2, six one-tap actions. A tap on a button logs the
+     entry in the background without launching the app; a tap anywhere else
+     opens it. -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/widget_description"
     android:initialLayout="@layout/glance_default_loading_layout"

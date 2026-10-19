@@ -1,9 +1,12 @@
+import java.io.FileInputStream
 import java.util.Properties
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    // The widget is written with Jetpack Glance, i.e. Compose.
+    id("org.jetbrains.kotlin.plugin.compose")
     id("rust")
 }
 
@@ -12,6 +15,15 @@ val tauriProperties = Properties().apply {
     if (propFile.exists()) {
         propFile.inputStream().use { load(it) }
     }
+}
+
+// Release signing, per https://v2.tauri.app/distribute/sign/android/.
+// The properties file is gitignored, so a machine without it still builds an
+// (unsigned) release; CI or a Play build supplies its own upload key there.
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
 android {
@@ -24,6 +36,16 @@ android {
         targetSdk = 37
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
+    }
+    signingConfigs {
+        if (keystorePropertiesFile.exists()) {
+            create("release") {
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["password"] as String
+                storeFile = file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["password"] as String
+            }
+        }
     }
     buildTypes {
         getByName("debug") {
@@ -42,6 +64,9 @@ android {
             optimization {
                enable = true
             }
+            if (keystorePropertiesFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 *fileTree(".") {
                   include("**/*.pro")
@@ -56,6 +81,7 @@ android {
     }
     buildFeatures {
         buildConfig = true
+        compose = true
     }
 }
 

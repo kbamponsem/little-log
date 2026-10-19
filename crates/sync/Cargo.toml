@@ -1,0 +1,14 @@
+[package]
+name = "little-log-sync"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Peer sync for Little Log: iroh QUIC transport plus the anti-entropy exchange."
+
+[dependencies]
+little-log-core = { path = "../core" }
+serde.workspace = true
+serde_json.workspace = true
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "time"] }
+iroh = "1.3"
+iroh-tickets = "1.0"

@@ -8,17 +8,18 @@ use std::path::Path;
 use std::str::FromStr;
 
 use rusqlite::{params, Connection, OptionalExtension, Row};
+use serde::{Deserialize, Serialize};
 
 use crate::crypto::{DeviceKey, GroupKey};
 use crate::error::{CoreError, Result};
 use crate::keystore::{self, SqliteKeyStore};
 use crate::log::EventLog;
-use crate::model::{Baby, Caregiver, Entry, Millis, Role};
+use crate::model::{Baby, Caregiver, Entry, JoinState, Millis, Role, Theme};
 use crate::sync::{self, Cursor};
 use crate::validate::now_millis;
 
 /// Bumped whenever the schema below changes; see [`Repo::migrate`].
-pub const SCHEMA_VERSION: i64 = 4;
+pub const SCHEMA_VERSION: i64 = 9;
 
 const ENTRY_COLUMNS: &str = "id, baby_id, kind, occurred_at, ended_at, feed_kind, amount, \
      amount_unit, diaper_type, pee_shade, pee_amount, poop_color, consistency, poop_amount, \
@@ -138,6 +139,80 @@ CREATE TABLE IF NOT EXISTS group_keys (
 );
 "#;
 
+/// Device settings: preferences that belong to *this* device and are never
+/// replicated. The theme lives here rather than on the baby because one phone's
+/// dark mode is nobody else's business.
+const SCHEMA_V5: &str = r#"
+CREATE TABLE IF NOT EXISTS device_settings (
+  id    INTEGER PRIMARY KEY CHECK (id = 1),
+  theme TEXT NOT NULL DEFAULT 'auto'
+);
+INSERT OR IGNORE INTO device_settings (id) VALUES (1);
+
+-- Theme moved here from the profile: it is a device preference, so it must not
+-- travel with the baby.
+ALTER TABLE babies DROP COLUMN theme;
+"#;
+
+/// Which child this device is looking at. A device preference, exactly like the
+/// theme: it never replicates, so one phone can follow one child while another
+/// follows a sibling.
+///
+/// The two `UPDATE`s are the upgrade path for a log that predates the intro
+/// screen. Entries written when a log could only hold one child are attached to
+/// the child that exists, and the device is pointed at it, so an existing user
+/// is never asked to "add a baby" they already have.
+const SCHEMA_V6: &str = r#"
+ALTER TABLE device_settings ADD COLUMN current_baby_id TEXT;
+
+UPDATE entries SET baby_id = (
+  SELECT id FROM babies WHERE deleted = 0 ORDER BY created_at, id LIMIT 1
+) WHERE baby_id IS NULL;
+
+UPDATE device_settings SET current_baby_id = (
+  SELECT id FROM babies WHERE deleted = 0 ORDER BY created_at, id LIMIT 1
+) WHERE current_baby_id IS NULL;
+"#;
+
+/// Dark became the default appearance after V5 had already shipped `auto`.
+///
+/// A device still reading `auto` never chose a theme — it inherited that
+/// default — so it moves to dark, and the device that set `auto` on purpose
+/// re-picks it. Nothing is published either way: the theme is local.
+const SCHEMA_V7: &str = r#"
+UPDATE device_settings SET theme = 'dark' WHERE theme = 'auto';
+"#;
+
+/// Who this device can sync with, per child.
+///
+/// Learned from an invite (the inviter's address) and from peers that connect to
+/// us (the connector's). One row per address, so a device that moves networks
+/// simply gains a second one rather than replacing the first.
+const SCHEMA_V8: &str = r#"
+CREATE TABLE IF NOT EXISTS peers (
+  topic TEXT NOT NULL,
+  addr  TEXT NOT NULL,
+  PRIMARY KEY (topic, addr)
+);
+"#;
+
+/// Devices asking to join a child's log, waiting for someone here to say yes.
+///
+/// An invite link no longer carries the group key (see `invite.rs`), so a joiner
+/// can reach us and ask but cannot read anything until this table says
+/// `accepted`. One row per device per child: a joiner polls, so re-asking must
+/// not overwrite a decision that has already been made.
+const SCHEMA_V9: &str = r#"
+CREATE TABLE IF NOT EXISTS join_requests (
+  topic        TEXT NOT NULL,
+  device       TEXT NOT NULL,
+  role         TEXT NOT NULL,
+  requested_at INTEGER NOT NULL,
+  state        TEXT NOT NULL DEFAULT 'pending',
+  PRIMARY KEY (topic, device)
+);
+"#;
+
 /// An invite link waiting to be redeemed.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Invite {
@@ -157,6 +232,23 @@ impl Invite {
     pub fn is_redeemed(&self) -> bool {
         self.accepted_by.is_some()
     }
+}
+
+/// A device waiting to be let into a child's log.
+///
+/// Serializable because the host's UI lists these, and the joiner polls on the
+/// state they carry.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct JoinRequest {
+    pub topic: String,
+    /// The asking device's id — the hex of its public key.
+    pub device: String,
+    /// The role its invite offered. The host may accept or decline; it does not
+    /// get to pick a different role, so what the inviter promised is what the
+    /// joiner is told.
+    pub role: Role,
+    pub requested_at: Millis,
+    pub state: JoinState,
 }
 
 /// A handle on one SQLite database.
@@ -213,6 +305,25 @@ impl Repo {
         if version < 4 {
             self.conn.execute_batch(SCHEMA_V4)?;
         }
+        if version < 5 {
+            self.conn.execute_batch(SCHEMA_V5)?;
+        }
+        if version < 6 {
+            self.conn.execute_batch(SCHEMA_V6)?;
+            // A profile write is sealed with the child's group key, and rows
+            // that predate the key table (or came from `ensure_baby`) have
+            // none. Minting one is safe: they hold no sealed events yet.
+            self.ensure_group_keys()?;
+        }
+        if version < 7 {
+            self.conn.execute_batch(SCHEMA_V7)?;
+        }
+        if version < 8 {
+            self.conn.execute_batch(SCHEMA_V8)?;
+        }
+        if version < 9 {
+            self.conn.execute_batch(SCHEMA_V9)?;
+        }
         if version < SCHEMA_VERSION {
             self.conn
                 .execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION};"))?;
@@ -262,6 +373,128 @@ impl Repo {
         }
     }
 
+    /* ---------------------------------------------------------------- peers */
+
+    /// Remember one way to reach a peer for a child. Re-remembering is a no-op.
+    pub fn save_peer(&self, topic: &str, addr: &str) -> Result<()> {
+        if addr.trim().is_empty() {
+            return Ok(());
+        }
+        self.conn.execute(
+            "INSERT OR IGNORE INTO peers (topic, addr) VALUES (?1, ?2)",
+            params![topic, addr],
+        )?;
+        Ok(())
+    }
+
+    /// Every peer address for one child.
+    pub fn peers_for(&self, topic: &str) -> Result<Vec<String>> {
+        let mut statement = self
+            .conn
+            .prepare("SELECT addr FROM peers WHERE topic = ?1 ORDER BY addr")?;
+        let rows = statement.query_map(params![topic], |row| row.get(0))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(CoreError::from)
+    }
+
+    /* -------------------------------------------------------- join requests */
+
+    /// Record that a device wants to join a child's log.
+    ///
+    /// Idempotent, and deliberately so: a joiner polls until someone answers, so
+    /// re-asking must not push a request that was already accepted back to
+    /// pending.
+    pub fn save_join_request(&self, topic: &str, device: &str, role: Role) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO join_requests (topic, device, role, requested_at, state)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                topic,
+                device,
+                role.as_str(),
+                now_millis(),
+                JoinState::Pending.as_str()
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Every request for one child, oldest first — what the host's UI lists.
+    pub fn join_requests(&self, topic: &str) -> Result<Vec<JoinRequest>> {
+        let mut statement = self.conn.prepare(
+            "SELECT topic, device, role, requested_at, state
+               FROM join_requests WHERE topic = ?1 ORDER BY requested_at, device",
+        )?;
+        let rows = statement.query_map(params![topic], join_request_from_row)?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(CoreError::from)
+    }
+
+    /// Where one device's request has got to, or `None` if we never heard it.
+    pub fn join_state(&self, topic: &str, device: &str) -> Result<Option<JoinState>> {
+        let stored: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT state FROM join_requests WHERE topic = ?1 AND device = ?2",
+                params![topic, device],
+                |row| row.get(0),
+            )
+            .optional()?;
+        match stored {
+            None => Ok(None),
+            Some(value) => JoinState::parse(&value).map(Some),
+        }
+    }
+
+    /// Accept or decline a request. Accepting is what lets the joiner be handed
+    /// the child's key on its next poll.
+    pub fn resolve_join_request(&self, topic: &str, device: &str, state: JoinState) -> Result<()> {
+        let changed = self.conn.execute(
+            "UPDATE join_requests SET state = ?3 WHERE topic = ?1 AND device = ?2",
+            params![topic, device, state.as_str()],
+        )?;
+        if changed == 0 {
+            return Err(CoreError::NotFound(format!(
+                "{device} has not asked to join"
+            )));
+        }
+        Ok(())
+    }
+
+    /// Forget an answered request once its answer has been delivered.
+    ///
+    /// A decline answers one attempt, not every future one. The joiner stops
+    /// polling when it hears it, so clearing the row lets a later attempt start
+    /// from pending instead of replaying the same rejection forever.
+    pub fn clear_join_request(&self, topic: &str, device: &str) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM join_requests WHERE topic = ?1 AND device = ?2",
+            params![topic, device],
+        )?;
+        Ok(())
+    }
+
+    /// Every peer address this device knows, across all children.
+    pub fn peers(&self) -> Result<Vec<String>> {
+        let mut statement = self
+            .conn
+            .prepare("SELECT DISTINCT addr FROM peers ORDER BY addr")?;
+        let rows = statement.query_map([], |row| row.get(0))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(CoreError::from)
+    }
+
+    /// Every topic this device holds a key for — the children it takes part in,
+    /// and therefore exactly what a sync round should exchange.
+    pub fn topics(&self) -> Result<Vec<String>> {
+        let mut statement = self
+            .conn
+            .prepare("SELECT topic FROM group_keys ORDER BY topic")?;
+        let rows = statement.query_map([], |row| row.get(0))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(CoreError::from)
+    }
+
     /// Store the group key for a baby: when this device creates one, or when it
     /// redeems an invite.
     pub fn save_group_key(&self, topic: &str, key: &GroupKey) -> Result<()> {
@@ -273,73 +506,153 @@ impl Repo {
         Ok(())
     }
 
-    /* ------------------------------------------------------------------ baby */
+    /* ----------------------------------------------------------------- baby */
 
+    /// Every live baby, oldest first.
+    ///
+    /// Empty only before the first profile: the log is the source of truth, so
+    /// babies appear here as their profile events are folded in.
+    pub fn babies(&self) -> Result<Vec<Baby>> {
+        let mut statement = self.conn.prepare(
+            "SELECT id, name, born FROM babies WHERE deleted = 0 ORDER BY created_at, id",
+        )?;
+        let rows = statement.query_map([], baby_from_row)?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(CoreError::from)
+    }
+
+    /// The first live baby, for callers that predate multiple babies.
     pub fn baby(&self) -> Result<Option<Baby>> {
+        Ok(self.babies()?.into_iter().next())
+    }
+
+    /// One baby by id, if it is live.
+    pub fn baby_by_id(&self, id: &str) -> Result<Option<Baby>> {
         self.conn
             .query_row(
-                "SELECT id, name, born, theme FROM babies WHERE deleted = 0 ORDER BY created_at LIMIT 1",
-                [],
-                |row| {
-                    Ok(Baby {
-                        id: Some(row.get(0)?),
-                        name: row.get(1)?,
-                        born: row.get(2)?,
-                        theme: parse_req(row.get::<_, String>(3)?, 3)?,
-                    })
-                },
+                "SELECT id, name, born FROM babies WHERE id = ?1 AND deleted = 0",
+                params![id],
+                baby_from_row,
             )
             .optional()
             .map_err(CoreError::from)
     }
 
-    /// The single baby of this household, created on first run.
+    /// The child this device is looking at.
+    ///
+    /// The pointer when it still resolves, otherwise the first child there is.
+    /// `None` only when the log holds no children at all — which is exactly
+    /// when the app should ask for one instead of opening onto a log.
+    pub fn current_baby(&self) -> Result<Option<Baby>> {
+        match self.pointed_baby()? {
+            Some(baby) => Ok(Some(baby)),
+            None => self.baby(),
+        }
+    }
+
+    /// The child the device pointer names, if it still exists.
+    fn pointed_baby(&self) -> Result<Option<Baby>> {
+        let id: Option<String> = self.conn.query_row(
+            "SELECT current_baby_id FROM device_settings WHERE id = 1",
+            [],
+            |row| row.get(0),
+        )?;
+        match id {
+            Some(id) => self.baby_by_id(&id),
+            None => Ok(None),
+        }
+    }
+
+    /// Point this device at a child.
+    ///
+    /// Device-local, like the theme: switching child on this phone must not
+    /// change what any other phone shows.
+    pub fn set_current_baby(&self, baby_id: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE device_settings SET current_baby_id = ?1 WHERE id = 1",
+            params![baby_id],
+        )?;
+        Ok(())
+    }
+
+    /// Give every child a group key if it has none.
+    ///
+    /// A profile write is sealed with this key, so a child without one can be
+    /// listed but not edited. Rows that predate the key table have no sealed
+    /// events, so minting a key for them loses nothing.
+    fn ensure_group_keys(&self) -> Result<()> {
+        for baby in self.babies()? {
+            let Some(id) = baby.id.as_deref() else {
+                continue;
+            };
+            if self.group_key(id)?.is_none() {
+                self.save_group_key(id, &GroupKey::generate()?)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// The first baby of this household, created if there is none.
+    ///
+    /// A convenience for callers that predate the intro screen; the app now
+    /// creates children explicitly with [`Repo::create_baby`], so that the user
+    /// names them rather than finding one called "Baby".
     pub fn ensure_baby(&self, name: &str) -> Result<Baby> {
         if let Some(baby) = self.baby()? {
             return Ok(baby);
         }
         let now = now_millis();
+        let id = crate::model::new_id();
         self.conn.execute(
-            "INSERT INTO babies (id, name, born, theme, created_at, updated_at, deleted)
-             VALUES (?1, ?2, '', 'auto', ?3, ?3, 0)",
-            params![uuid::Uuid::now_v7().to_string(), name, now],
+            "INSERT INTO babies (id, name, born, created_at, updated_at, deleted)
+             VALUES (?1, ?2, '', ?3, ?3, 0)",
+            params![id, name, now],
         )?;
-        self.baby()?
+        // Every child needs a key, because a profile write is sealed with it.
+        self.save_group_key(&id, &GroupKey::generate()?)?;
+        self.baby_by_id(&id)?
             .ok_or_else(|| CoreError::data("baby missing after insert"))
     }
 
+    /// Save one baby's columns. A baby with no id is a new one.
+    ///
+    /// This writes the projection's row only; a change that should reach other
+    /// devices has to go through [`Repo::save_profile`], which appends an event.
     pub fn save_baby(&self, baby: &Baby) -> Result<Baby> {
-        crate::validate::parse_theme(baby.theme.as_str())?;
         let now = now_millis();
-        // One baby per household: fall back to the stored row's id so a client
-        // that omits it updates rather than inserting a second profile.
-        let id = match baby.id.clone() {
-            Some(id) => Some(id),
-            None => self.baby()?.and_then(|stored| stored.id),
-        };
-        match &id {
-            Some(id) => {
-                self.conn.execute(
-                    "UPDATE babies SET name = ?2, born = ?3, theme = ?4, updated_at = ?5 WHERE id = ?1",
-                    params![id, baby.name, baby.born, baby.theme.as_str(), now],
-                )?;
-            }
-            None => {
-                self.conn.execute(
-                    "INSERT INTO babies (id, name, born, theme, created_at, updated_at, deleted)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?5, 0)",
-                    params![
-                        crate::model::new_id(),
-                        baby.name,
-                        baby.born,
-                        baby.theme.as_str(),
-                        now
-                    ],
-                )?;
-            }
-        }
-        self.baby()?
+        let id = baby.id.clone().unwrap_or_else(crate::model::new_id);
+        self.conn.execute(
+            "INSERT INTO babies (id, name, born, created_at, updated_at, deleted)
+             VALUES (?1, ?2, ?3, ?4, ?4, 0)
+             ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name,
+                born = excluded.born,
+                updated_at = excluded.updated_at",
+            params![id, baby.name, baby.born, now],
+        )?;
+        self.baby_by_id(&id)?
             .ok_or_else(|| CoreError::data("baby missing after save"))
+    }
+
+    /* ------------------------------------------------------ device settings */
+
+    /// This device's theme. A device preference: never replicated, never sent.
+    pub fn device_theme(&self) -> Result<Theme> {
+        let stored: String = self.conn.query_row(
+            "SELECT theme FROM device_settings WHERE id = 1",
+            [],
+            |row| row.get(0),
+        )?;
+        crate::validate::parse_theme(&stored)
+    }
+
+    /// Set this device's theme.
+    pub fn save_device_theme(&self, theme: Theme) -> Result<()> {
+        self.conn.execute(
+            "UPDATE device_settings SET theme = ?1 WHERE id = 1",
+            params![theme.as_str()],
+        )?;
+        Ok(())
     }
 
     /* --------------------------------------------------------------- entries */
@@ -351,6 +664,18 @@ impl Repo {
         );
         let mut statement = self.conn.prepare(&sql)?;
         let rows = statement.query_map([], entry_from_row)?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(CoreError::from)
+    }
+
+    /// Every live entry for one baby, newest first.
+    pub fn entries_for(&self, baby_id: &str) -> Result<Vec<Entry>> {
+        let sql = format!(
+            "SELECT {ENTRY_COLUMNS} FROM entries
+              WHERE deleted = 0 AND baby_id = ?1 ORDER BY occurred_at DESC, id DESC"
+        );
+        let mut statement = self.conn.prepare(&sql)?;
+        let rows = statement.query_map(params![baby_id], entry_from_row)?;
         rows.collect::<rusqlite::Result<Vec<_>>>()
             .map_err(CoreError::from)
     }
@@ -490,6 +815,19 @@ impl Repo {
         );
         self.conn
             .query_row(&sql, [], entry_from_row)
+            .optional()
+            .map_err(CoreError::from)
+    }
+
+    /// The sleep that is still running for one baby, if that baby is asleep.
+    pub fn running_sleep_for(&self, baby_id: &str) -> Result<Option<Entry>> {
+        let sql = format!(
+            "SELECT {ENTRY_COLUMNS} FROM entries
+              WHERE kind = 'sleep' AND ended_at IS NULL AND deleted = 0 AND baby_id = ?1
+              ORDER BY occurred_at DESC LIMIT 1"
+        );
+        self.conn
+            .query_row(&sql, params![baby_id], entry_from_row)
             .optional()
             .map_err(CoreError::from)
     }
@@ -779,6 +1117,42 @@ impl Repo {
 }
 
 /* ------------------------------------------------------------------ mapping */
+
+/// A stored enum value that no longer parses, reported rather than skipped: a
+/// request nobody can read is a request nobody can act on, and silently
+/// dropping it would look like the joiner never asked.
+fn bad_value(index: usize, message: String) -> rusqlite::Error {
+    rusqlite::Error::FromSqlConversionFailure(
+        index,
+        rusqlite::types::Type::Text,
+        Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            message,
+        )),
+    )
+}
+
+/// Read one `join_requests` row.
+fn join_request_from_row(row: &Row<'_>) -> rusqlite::Result<JoinRequest> {
+    let role: String = row.get(2)?;
+    let state: String = row.get(4)?;
+    Ok(JoinRequest {
+        topic: row.get(0)?,
+        device: row.get(1)?,
+        role: Role::parse(&role).map_err(|error| bad_value(2, error.to_string()))?,
+        requested_at: row.get(3)?,
+        state: JoinState::parse(&state).map_err(|error| bad_value(4, error.to_string()))?,
+    })
+}
+
+/// Read `SELECT id, name, born` into a [`Baby`].
+fn baby_from_row(row: &Row<'_>) -> rusqlite::Result<Baby> {
+    Ok(Baby {
+        id: Some(row.get(0)?),
+        name: row.get(1)?,
+        born: row.get(2)?,
+    })
+}
 
 fn entry_from_row(row: &Row<'_>) -> rusqlite::Result<Entry> {
     Ok(Entry {

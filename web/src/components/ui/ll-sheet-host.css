@@ -46,18 +46,28 @@ ll-sheet-host {
   font-family: var(--disp);
   font-weight: 400;
   font-size: clamp(26px, 6vw, 32px);
+  /* Sit the heading in a tap-target-height row and keep it clear of the floated
+     close button, so the button's centre lines up with the title's first line
+     instead of hanging below it. */
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  padding-right: 56px;
 }
 
 /* Close affordance. */
 .x {
   all: unset;
+  box-sizing: border-box;
   float: right;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
   min-width: 56px;
   min-height: 56px;
-  padding: 8px 10px;
+  padding: 0 10px;
   font-size: 30px;
-  line-height: 38px;
-  text-align: right;
+  line-height: 1;
   cursor: pointer;
 }
 

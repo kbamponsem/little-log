@@ -20,26 +20,37 @@ object WidgetBridge {
      * Apply every queued tap to the app's database and refresh the widget's
      * state file. Returns true when at least one entry was logged.
      */
-    external fun nativeDrain(filesDir: String, tzOffsetMinutes: Int): Boolean
+    external fun nativeDrain(dataDir: String, tzOffsetMinutes: Int): Boolean
 
     /** Recompute the widget's state file from the database. */
-    external fun nativeRefresh(filesDir: String, tzOffsetMinutes: Int)
+    external fun nativeRefresh(dataDir: String, tzOffsetMinutes: Int)
 }
 
 /**
  * Where the app keeps its data.
  *
- * The app writes `widget_root.txt` on startup so this process opens exactly the
- * same SQLite file; before the app has ever run we fall back to `filesDir`.
+ * Tauri's app data directory is the package data directory — the *parent* of
+ * `filesDir` — and the app writes `widget_root.txt` there on startup so this
+ * process opens exactly the same SQLite file.
+ *
+ * Looking only in `filesDir` (as this used to) never found the marker, and the
+ * fallback then pointed the whole widget at a second, empty database: taps
+ * landed there, and the app never saw them.
  */
 object WidgetPaths {
     private const val MARKER = "widget_root.txt"
 
     fun root(context: Context): File {
-        val marker = File(context.filesDir, MARKER)
-        val value = runCatching { marker.readText().trim() }.getOrNull()
-        return if (!value.isNullOrEmpty()) File(value) else context.filesDir
+        for (directory in listOf(context.dataDir, context.filesDir)) {
+            val value = runCatching { File(directory, MARKER).readText().trim() }.getOrNull()
+            if (!value.isNullOrEmpty()) return File(value)
+        }
+        // Before the app has ever run: the directory it will use.
+        return context.dataDir
     }
 
     fun stateFile(context: Context): File = File(root(context), "widget_state.json")
+
+    /** The action a widget tap wants the UI to open; Rust reads and clears it. */
+    fun pendingAction(context: Context): File = File(root(context), "pending_action.txt")
 }

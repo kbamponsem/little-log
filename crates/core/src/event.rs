@@ -5,6 +5,8 @@
 //! payload is sealed with that key; and the signature covers **both**, so a peer
 //! cannot re-attribute, re-time or edit an event it received.
 
+use serde::{Deserialize, Serialize};
+
 use crate::clock::Hlc;
 use crate::crypto::{self, DeviceKey, GroupKey, NONCE_LEN, SIGNATURE_LEN};
 use crate::error::Result;
@@ -16,8 +18,39 @@ const MAGIC: &[u8; 4] = b"LLEV";
 /// 1 → 2 added `entry_id` to the signed headers.
 const FORMAT_VERSION: u8 = 2;
 
+/// Transport encoding for the fixed-size byte arrays, which are longer than
+/// serde's built-in array support.
+///
+/// Length-checked on the way in: a truncated signature has to be an error, not
+/// something quietly padded into a valid-looking one.
+mod bytes_array {
+    use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S, const N: usize>(value: &[u8; N], serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        value.as_slice().serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D, const N: usize>(deserializer: D) -> Result<[u8; N], D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let bytes = Vec::<u8>::deserialize(deserializer)?;
+        bytes
+            .try_into()
+            .map_err(|_| D::Error::custom("a fixed-size field arrived with the wrong length"))
+    }
+}
+
 /// One immutable event in the log.
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// `Serialize`/`Deserialize` here are for **transport only** — the bytes a peer
+/// sends and receives. They are not the signed bytes: [`Event::signing_bytes`]
+/// is laid out by hand and pinned by a golden test, so changing this encoding
+/// cannot change a signature.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Event {
     /// UUIDv7, generated on the authoring device. Identifies *this* event.
     pub id: String,
@@ -33,10 +66,12 @@ pub struct Event {
     pub hlc: Hlc,
     pub kind: EventKind,
     /// Nonce for `payload`; unique per event.
+    #[serde(with = "bytes_array")]
     pub nonce: [u8; NONCE_LEN],
     /// The sealed payload.
     pub payload: Vec<u8>,
     /// The author's signature over [`Event::signing_bytes`].
+    #[serde(with = "bytes_array")]
     pub signature: [u8; SIGNATURE_LEN],
 }
 

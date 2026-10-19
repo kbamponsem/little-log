@@ -1,0 +1,6 @@
+/* The appearance sheet: the three theme chips and a note.
+   Everything else (.x, h3, the chips themselves) is shared chrome. */
+
+ll-theme-sheet .note {
+  margin-top: 14px;
+}

@@ -1,5 +1,18 @@
 /* Today screen layout. */
 
+.today-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.today-head h1 {
+  margin: 0;
+}
+
+/* The cog itself is shared chrome; see `.cog` in styles/base.css. */
+
 .stats {
   display: flex;
   flex-wrap: wrap;

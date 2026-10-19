@@ -2,8 +2,9 @@
 target/
 **/target/
 
-# Runtime data (SQLite + photos live here)
-data/
+# Runtime data (SQLite + photos live here). Anchored to the repo root so the
+# frontend's src/data layer is tracked.
+/data/
 *.sqlite3
 *.sqlite3-wal
 *.sqlite3-shm

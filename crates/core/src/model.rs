@@ -78,7 +78,10 @@ string_enum!(
         Edit => "edit", "Edited";
         Delete => "delete", "Deleted";
         SleepStart => "sleep_start", "Asleep";
-        SleepStop => "sleep_stop", "Awake"
+        SleepStop => "sleep_stop", "Awake";
+        // A baby's profile. Its `entry_id` is the baby's id, so profiles ride
+        // the same log and the same replication as entries.
+        Profile => "profile", "Profile"
     }
 );
 
@@ -151,6 +154,19 @@ string_enum!(Theme {
     Light => "light", "Light";
     Dark => "dark", "Dark"
 });
+
+string_enum!(
+    /// Where a device's request to join a child's log has got to.
+    ///
+    /// The invite link deliberately carries no group key, so a joiner can reach
+    /// us but cannot read a thing until a person on this side accepts. This is
+    /// what the joiner polls on.
+    JoinState {
+        Pending => "pending", "Waiting to be accepted";
+        Accepted => "accepted", "Accepted";
+        Declined => "declined", "Declined"
+    }
+);
 
 string_enum!(AmountUnit {
     Milliliters => "ml", "ml";
@@ -328,7 +344,10 @@ impl Entry {
     }
 }
 
-/// The baby's profile. One baby per household in v1.
+/// A baby's profile: its name and birthday.
+///
+/// There is no theme here on purpose. Appearance is a device preference and
+/// lives in `device_settings`, so it never travels with the baby.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Baby {
     #[serde(default)]
@@ -338,12 +357,6 @@ pub struct Baby {
     /// Birthday as `YYYY-MM-DD`, or empty.
     #[serde(default)]
     pub born: String,
-    #[serde(default = "default_theme")]
-    pub theme: Theme,
-}
-
-fn default_theme() -> Theme {
-    Theme::Auto
 }
 
 impl Default for Baby {
@@ -352,7 +365,6 @@ impl Default for Baby {
             id: None,
             name: "Baby".to_string(),
             born: String::new(),
-            theme: Theme::Auto,
         }
     }
 }
