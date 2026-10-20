@@ -19,7 +19,7 @@ use crate::sync::{self, Cursor};
 use crate::validate::now_millis;
 
 /// Bumped whenever the schema below changes; see [`Repo::migrate`].
-pub const SCHEMA_VERSION: i64 = 9;
+pub const SCHEMA_VERSION: i64 = 10;
 
 const ENTRY_COLUMNS: &str = "id, baby_id, kind, occurred_at, ended_at, feed_kind, amount, \
      amount_unit, diaper_type, pee_shade, pee_amount, poop_color, consistency, poop_amount, \
@@ -213,6 +213,12 @@ CREATE TABLE IF NOT EXISTS join_requests (
 );
 "#;
 
+/// A child's profile picture: the file name in `photos/`, carried in the
+/// profile event so it reaches the other devices with the name and birthday.
+const SCHEMA_V10: &str = r#"
+ALTER TABLE babies ADD COLUMN photo TEXT;
+"#;
+
 /// An invite link waiting to be redeemed.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Invite {
@@ -323,6 +329,9 @@ impl Repo {
         }
         if version < 9 {
             self.conn.execute_batch(SCHEMA_V9)?;
+        }
+        if version < 10 {
+            self.conn.execute_batch(SCHEMA_V10)?;
         }
         if version < SCHEMA_VERSION {
             self.conn
@@ -514,7 +523,7 @@ impl Repo {
     /// babies appear here as their profile events are folded in.
     pub fn babies(&self) -> Result<Vec<Baby>> {
         let mut statement = self.conn.prepare(
-            "SELECT id, name, born FROM babies WHERE deleted = 0 ORDER BY created_at, id",
+            "SELECT id, name, born, photo FROM babies WHERE deleted = 0 ORDER BY created_at, id",
         )?;
         let rows = statement.query_map([], baby_from_row)?;
         rows.collect::<rusqlite::Result<Vec<_>>>()
@@ -530,7 +539,7 @@ impl Repo {
     pub fn baby_by_id(&self, id: &str) -> Result<Option<Baby>> {
         self.conn
             .query_row(
-                "SELECT id, name, born FROM babies WHERE id = ?1 AND deleted = 0",
+                "SELECT id, name, born, photo FROM babies WHERE id = ?1 AND deleted = 0",
                 params![id],
                 baby_from_row,
             )
@@ -581,12 +590,20 @@ impl Repo {
     /// listed but not edited. Rows that predate the key table have no sealed
     /// events, so minting a key for them loses nothing.
     fn ensure_group_keys(&self) -> Result<()> {
-        for baby in self.babies()? {
-            let Some(id) = baby.id.as_deref() else {
-                continue;
-            };
-            if self.group_key(id)?.is_none() {
-                self.save_group_key(id, &GroupKey::generate()?)?;
+        // Read the ids directly: this runs half-way through the migrations, so
+        // it must not depend on columns a later step adds (`baby_from_row`).
+        let ids = {
+            let mut statement = self
+                .conn
+                .prepare("SELECT id FROM babies WHERE deleted = 0")?;
+            let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()
+                .map_err(CoreError::from)?
+        };
+
+        for id in ids {
+            if self.group_key(&id)?.is_none() {
+                self.save_group_key(&id, &GroupKey::generate()?)?;
             }
         }
         Ok(())
@@ -622,13 +639,14 @@ impl Repo {
         let now = now_millis();
         let id = baby.id.clone().unwrap_or_else(crate::model::new_id);
         self.conn.execute(
-            "INSERT INTO babies (id, name, born, created_at, updated_at, deleted)
-             VALUES (?1, ?2, ?3, ?4, ?4, 0)
+            "INSERT INTO babies (id, name, born, photo, created_at, updated_at, deleted)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?5, 0)
              ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 born = excluded.born,
+                photo = excluded.photo,
                 updated_at = excluded.updated_at",
-            params![id, baby.name, baby.born, now],
+            params![id, baby.name, baby.born, baby.photo, now],
         )?;
         self.baby_by_id(&id)?
             .ok_or_else(|| CoreError::data("baby missing after save"))
@@ -736,6 +754,35 @@ impl Repo {
                 continue;
             };
             let Ok(payload) = crate::payload::EntryPayload::from_bytes(&plain) else {
+                continue;
+            };
+            if let Some(encoded) = payload.photo_data {
+                if let Some(bytes) = crate::crypto::from_hex(&encoded) {
+                    return Ok(Some(bytes));
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    /// The newest profile picture bytes a baby's profile events carry, if any.
+    ///
+    /// The same split as entry photos: the file lives on the device that picked
+    /// it, while a peer reads the bytes out of the profile write it received.
+    pub fn baby_photo_bytes(&self, baby_id: &str) -> Result<Option<Vec<u8>>> {
+        let events = self.log().for_entry(baby_id)?;
+        let Some(newest) = events.last() else {
+            return Ok(None);
+        };
+        let Some(group) = self.group_key(&newest.topic)? else {
+            return Ok(None);
+        };
+
+        for event in events.iter().rev() {
+            let Ok(plain) = event.open(&group) else {
+                continue;
+            };
+            let Ok(payload) = crate::payload::BabyPayload::from_bytes(&plain) else {
                 continue;
             };
             if let Some(encoded) = payload.photo_data {
@@ -1175,12 +1222,13 @@ fn join_request_from_row(row: &Row<'_>) -> rusqlite::Result<JoinRequest> {
     })
 }
 
-/// Read `SELECT id, name, born` into a [`Baby`].
+/// Read `SELECT id, name, born, photo` into a [`Baby`].
 fn baby_from_row(row: &Row<'_>) -> rusqlite::Result<Baby> {
     Ok(Baby {
         id: Some(row.get(0)?),
         name: row.get(1)?,
         born: row.get(2)?,
+        photo: row.get(3)?,
     })
 }
 

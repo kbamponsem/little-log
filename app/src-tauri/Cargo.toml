@@ -28,6 +28,8 @@ tauri = { version = "2", features = [] }
 # reliably than aws-lc-rs. The 0.23 line matches the rustls reqwest already uses,
 # so there is still exactly one rustls in the dependency tree.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
 
 # The Android widget's headless drain runs from a WorkManager worker, which
 # reaches the core through these JNI exports (see src/widget.rs).

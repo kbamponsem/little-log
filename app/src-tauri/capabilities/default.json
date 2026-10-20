@@ -3,5 +3,9 @@
   "identifier": "default",
   "description": "Core capability for the Little Log window: the app's own commands.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "dialog:allow-save",
+    "fs:allow-write-text-file"
+  ]
 }

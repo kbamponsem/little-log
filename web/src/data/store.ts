@@ -143,6 +143,14 @@ export class AppStore extends Observable<AppStore> {
     this.notify();
   }
 
+  /** Set the current child's profile picture, on disk and in the log. */
+  async saveBabyPhoto(blob: Blob): Promise<void> {
+    const id = this.baby.id;
+    if (!id) return;
+    const photo = await this.repo.saveBabyPhoto(id, blob);
+    await this.saveBaby({ photo });
+  }
+
   /** Set this device's appearance. Local only — nothing is published. */
   async saveTheme(theme: Theme): Promise<void> {
     this.theme = theme;

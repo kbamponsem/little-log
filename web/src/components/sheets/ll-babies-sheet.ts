@@ -1,11 +1,12 @@
 import { defineComponent } from "../../core/component";
 import { LLSheet } from "../../core/sheet";
+import { ui } from "../../core/ui-store";
 import { ageStr, esc } from "../../format";
 import type { Baby } from "../../data/model";
 import "./ll-babies-sheet.css";
 
 /**
- * Switch which child the log is showing.
+ * Switch which child the log is showing, and add another.
  *
  * Reached by holding the Baby tab instead of listing every child on the home
  * screen: a household with one child never sees a switcher, and a household
@@ -27,6 +28,7 @@ export class LlBabiesSheet extends LLSheet {
       <button class="x" type="button" data-action="close" aria-label="Close">×</button>
       <h3>Who are you logging for?</h3>
       <div class="babies">${rows}</div>
+      <button class="add-baby" type="button" data-action="add">+ Add baby</button>
     `;
   }
 
@@ -35,6 +37,10 @@ export class LlBabiesSheet extends LLSheet {
       const target = event.target as HTMLElement;
       if (target.closest("[data-action='close']")) {
         this.close();
+        return;
+      }
+      if (target.closest("[data-action='add']")) {
+        ui.openSheet({ name: "add-baby" });
         return;
       }
       const chosen = target.closest<HTMLElement>("[data-baby]")?.dataset.baby;

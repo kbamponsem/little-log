@@ -48,6 +48,7 @@ impl Repo {
             id: Some(id.clone()),
             name: name.to_string(),
             born: born.to_string(),
+            photo: None,
         };
         self.record_profile(key, clock, &group, &baby)?;
 
@@ -63,24 +64,48 @@ impl Repo {
         group: &GroupKey,
         baby: &Baby,
     ) -> Result<Event> {
+        self.record_profile_with_photo(key, clock, group, baby, None)
+    }
+
+    /// [`Self::record_profile`], carrying the picture bytes in the event so the
+    /// image reaches a peer along with the name and birthday.
+    pub fn record_profile_with_photo(
+        &self,
+        key: &DeviceKey,
+        clock: &mut Clock,
+        group: &GroupKey,
+        baby: &Baby,
+        photo: Option<&[u8]>,
+    ) -> Result<Event> {
         let Some(id) = baby.id.clone() else {
             return Err(CoreError::invalid("a profile needs a baby id"));
         };
-        let event = seal_profile(key, clock, group, &id, baby)?;
+        let event = seal_profile(key, clock, group, &id, baby, photo)?;
         self.log().insert(&event)?;
         self.project_baby(&id, group)?;
         Ok(event)
     }
 
-    /// Save a baby's name and birthday as a new profile write.
+    /// Save a baby's name, birthday and picture as a new profile write.
     pub fn save_profile(&self, key: &DeviceKey, clock: &mut Clock, baby: &Baby) -> Result<Baby> {
+        self.save_profile_with_photo(key, clock, baby, None)
+    }
+
+    /// [`Self::save_profile`], carrying the picture bytes in the event.
+    pub fn save_profile_with_photo(
+        &self,
+        key: &DeviceKey,
+        clock: &mut Clock,
+        baby: &Baby,
+        photo: Option<&[u8]>,
+    ) -> Result<Baby> {
         let Some(id) = baby.id.clone() else {
             return Err(CoreError::invalid("a profile needs a baby id"));
         };
         let group = self
             .group_key(&id)?
             .ok_or_else(|| CoreError::invalid("this device does not hold that baby's key"))?;
-        self.record_profile(key, clock, &group, baby)?;
+        self.record_profile_with_photo(key, clock, &group, baby, photo)?;
         self.baby_by_id(&id)?
             .ok_or_else(|| CoreError::data("baby missing after save"))
     }
@@ -205,8 +230,9 @@ fn seal_profile(
     group: &GroupKey,
     baby_id: &str,
     baby: &Baby,
+    photo: Option<&[u8]>,
 ) -> Result<Event> {
-    let payload = BabyPayload::of(baby).to_bytes()?;
+    let payload = BabyPayload::of_with_photo(baby, photo).to_bytes()?;
     Event::seal(
         key,
         group,
@@ -291,6 +317,54 @@ mod tests {
             "an edit is an event, not an overwrite"
         );
         assert_eq!(device.repo.babies().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_profile_picture_travels_in_the_event_and_survives_a_rename() {
+        let mut device = Device::new();
+        let baby = device.create("Ada");
+        let id = baby.id.clone().unwrap();
+        let photo: &[u8] = b"jpeg-ish bytes";
+        let pictured = Baby {
+            photo: Some(crate::photo::baby_photo_id(&id) + ".jpg"),
+            ..baby.clone()
+        };
+
+        device
+            .repo
+            .save_profile_with_photo(&device.key, &mut device.clock, &pictured, Some(photo))
+            .unwrap();
+
+        assert_eq!(
+            device.repo.baby_by_id(&id).unwrap().unwrap().photo,
+            pictured.photo,
+            "the row records the file name"
+        );
+        assert_eq!(
+            device.repo.baby_photo_bytes(&id).unwrap().as_deref(),
+            Some(photo),
+            "a peer can read the bytes out of the event"
+        );
+
+        // An edit from a device that has no local file must not drop it.
+        let renamed = device
+            .repo
+            .save_profile(
+                &device.key,
+                &mut device.clock,
+                &Baby {
+                    name: "Ada Lovelace".into(),
+                    ..pictured
+                },
+            )
+            .unwrap();
+
+        assert_eq!(renamed.name, "Ada Lovelace");
+        assert_eq!(
+            device.repo.baby_photo_bytes(&id).unwrap().as_deref(),
+            Some(photo),
+            "the older profile event still carries the picture"
+        );
     }
 
     #[test]

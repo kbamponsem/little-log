@@ -1,0 +1,37 @@
+/* The "Take photo / Upload file" choice opened by choosePhotoSource(). */
+
+.photo-source {
+  width: min(100% - 24px, 380px);
+  margin: auto auto 0;
+  padding: 22px 18px calc(22px + env(safe-area-inset-bottom, 0px));
+  border: 0;
+  border-radius: 32px 32px 0 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--body);
+}
+
+.photo-source::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.photo-source .grp {
+  margin: 0 0 4px;
+  font-family: var(--disp);
+  font-size: clamp(24px, 6vw, 30px);
+  font-weight: 400;
+}
+
+.photo-source .chip {
+  width: 100%;
+  justify-content: center;
+  margin-top: 12px;
+}
+
+/* Tablet and up: a centred dialog reads better than a bottom drawer. */
+@media (min-width: 700px) {
+  .photo-source {
+    margin: auto;
+    border-radius: 32px;
+  }
+}

@@ -344,7 +344,7 @@ impl Entry {
     }
 }
 
-/// A baby's profile: its name and birthday.
+/// A baby's profile: its name, birthday and picture.
 ///
 /// There is no theme here on purpose. Appearance is a device preference and
 /// lives in `device_settings`, so it never travels with the baby.
@@ -357,6 +357,12 @@ pub struct Baby {
     /// Birthday as `YYYY-MM-DD`, or empty.
     #[serde(default)]
     pub born: String,
+    /// File name in `photos/` for the profile picture, or `None`.
+    ///
+    /// The name travels in the profile event, so a peer knows a picture exists;
+    /// the bytes travel with the event too, and are read back on demand.
+    #[serde(default)]
+    pub photo: Option<String>,
 }
 
 impl Default for Baby {
@@ -365,6 +371,7 @@ impl Default for Baby {
             id: None,
             name: "Baby".to_string(),
             born: String::new(),
+            photo: None,
         }
     }
 }

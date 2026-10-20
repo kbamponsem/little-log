@@ -19,6 +19,7 @@ import "./sheets/ll-diaper-sheet";
 import "./sheets/ll-sleep-sheet";
 import "./sheets/ll-detail-sheet";
 import "./sheets/ll-babies-sheet";
+import "./sheets/ll-add-baby-sheet";
 import "./sheets/ll-invite-sheet";
 import "./sheets/ll-join-sheet";
 import "./sheets/ll-theme-sheet";

@@ -120,6 +120,7 @@ pub struct ResolvedBaby {
     pub id: String,
     pub name: String,
     pub born: String,
+    pub photo: Option<String>,
     pub created_at: Millis,
     pub updated_at: Millis,
     pub deleted: bool,
@@ -174,6 +175,7 @@ pub fn resolve_baby(events: &[Event], group: &GroupKey) -> Result<Option<Resolve
         id: winner.entry_id.clone(),
         name: payload.name,
         born: payload.born,
+        photo: payload.photo,
         created_at: if earliest_write == Millis::MAX {
             winner.hlc.wall_ms
         } else {
@@ -227,16 +229,18 @@ impl Repo {
 
     /// Write a projected baby row.
     ///
-    /// Only what a profile can decide is written: name and birthday. The theme
-    /// is not here at all — it lives in `device_settings`, so folding a profile
-    /// that arrived from another phone cannot change how this one looks.
+    /// Only what a profile can decide is written: name, birthday and picture.
+    /// The theme is not here at all — it lives in `device_settings`, so folding
+    /// a profile that arrived from another phone cannot change how this one
+    /// looks.
     pub fn force_baby(&self, baby: &ResolvedBaby) -> Result<()> {
         self.connection().execute(
-            "INSERT INTO babies (id, name, born, created_at, updated_at, deleted)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            "INSERT INTO babies (id, name, born, photo, created_at, updated_at, deleted)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
              ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 born = excluded.born,
+                photo = excluded.photo,
                 created_at = excluded.created_at,
                 updated_at = excluded.updated_at,
                 deleted = excluded.deleted",
@@ -244,6 +248,7 @@ impl Repo {
                 baby.id,
                 baby.name,
                 baby.born,
+                baby.photo,
                 baby.created_at,
                 baby.updated_at,
                 i64::from(baby.deleted),
@@ -358,6 +363,8 @@ mod tests {
             let payload = BabyPayload {
                 name: name.to_string(),
                 born: "2026-02-14".to_string(),
+                photo: None,
+                photo_data: None,
             };
             Event::seal(
                 &self.key,

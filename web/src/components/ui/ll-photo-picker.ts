@@ -1,6 +1,6 @@
 import { defineComponent, LLComponent } from "../../core/component";
 import { $ } from "../../core/dom";
-import { resizePhoto } from "../../photo";
+import { choosePhotoSource, resizePhoto } from "../../photo";
 import { ic } from "../../icons";
 import "./ll-photo-picker.css";
 
@@ -16,7 +16,8 @@ export class LlPhotoPicker extends LLComponent {
   protected template(): string {
     return `
       <button class="chip" type="button" data-action="pick">${ic("camera", 22)} Add photo</button>
-      <input type="file" accept="image/*" capture="environment" hidden>
+      <input type="file" accept="image/*" data-source="camera" capture="environment" hidden>
+      <input type="file" accept="image/*" data-source="upload" hidden>
       <img alt="Photo preview">
       <p class="err" hidden></p>
     `;
@@ -24,9 +25,14 @@ export class LlPhotoPicker extends LLComponent {
 
   protected mount(): void {
     const button = $<HTMLButtonElement>("[data-action='pick']", this);
-    const input = $<HTMLInputElement>("input[type=file]", this);
-    button?.addEventListener("click", () => input?.click());
-    input?.addEventListener("change", () => this.picked(input));
+    for (const input of this.querySelectorAll<HTMLInputElement>("input[type=file]")) {
+      input.addEventListener("change", () => this.picked(input));
+    }
+    button?.addEventListener("click", () =>
+      choosePhotoSource((source) =>
+        this.querySelector<HTMLInputElement>(`input[data-source='${source}']`)?.click(),
+      ),
+    );
 
     if (this.blob) this.showPreview(this.blob);
   }

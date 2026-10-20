@@ -168,14 +168,24 @@ pub fn create_baby(state: State<'_, AppState>, name: String, born: String) -> Cm
     Ok(baby)
 }
 
-/// Save a child's name and birthday as a profile write, so the change reaches
-/// the other devices rather than only this one's row.
+/// Save a child's name, birthday and picture as a profile write, so the change
+/// reaches the other devices rather than only this one's row.
 #[tauri::command]
 pub fn save_baby(state: State<'_, AppState>, baby: Baby) -> CmdResult<Baby> {
+    // Carry the picture in the event, like an entry's photo: a peer has no
+    // access to this device's photos/ directory. Read it before the repo lock.
+    let photo = match (baby.id.as_deref(), baby.photo.as_deref()) {
+        (Some(id), Some(_)) => {
+            photo::read_photo(&state.photos_dir(), &photo::baby_photo_id(id)).ok()
+        }
+        _ => None,
+    };
+
     let repo = state.repo();
     let key = repo.device_key().map_err(fail)?;
     let mut clock = repo.clock(key.id()).map_err(fail)?;
-    repo.save_profile(&key, &mut clock, &baby).map_err(fail)
+    repo.save_profile_with_photo(&key, &mut clock, &baby, photo.as_deref())
+        .map_err(fail)
 }
 
 /// Point this device at a child. Local only: it changes nobody else's view.
@@ -390,6 +400,37 @@ pub fn photo_data_url(state: State<'_, AppState>, entry_id: String) -> CmdResult
         Err(_) => state
             .repo()
             .photo_bytes(&entry_id)
+            .map_err(fail)?
+            .ok_or_else(|| "photo not found on this device".to_string())?,
+    };
+    let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+    Ok(format!("data:image/jpeg;base64,{encoded}"))
+}
+
+/// Store a child's profile picture: downscaled to ≤1280 px JPEG.
+/// Returns the file name to record on the profile.
+#[tauri::command]
+pub fn save_baby_photo(
+    state: State<'_, AppState>,
+    baby_id: String,
+    bytes: Vec<u8>,
+) -> CmdResult<String> {
+    photo::write_photo(&state.photos_dir(), &photo::baby_photo_id(&baby_id), &bytes)
+        .map_err(fail)
+}
+
+/// The profile picture as a data URL, for the avatar in the WebView.
+///
+/// Prefer the local file. A device that received the profile over sync has no
+/// file, so fall back to the copy carried inside the profile event.
+#[tauri::command]
+pub fn baby_photo_data_url(state: State<'_, AppState>, baby_id: String) -> CmdResult<String> {
+    let name = photo::baby_photo_id(&baby_id);
+    let bytes = match photo::read_photo(&state.photos_dir(), &name) {
+        Ok(bytes) => bytes,
+        Err(_) => state
+            .repo()
+            .baby_photo_bytes(&baby_id)
             .map_err(fail)?
             .ok_or_else(|| "photo not found on this device".to_string())?,
     };

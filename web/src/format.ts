@@ -62,11 +62,13 @@ export function dayStart(date: Date): number {
   return start.getTime();
 }
 
-/** "9 days old" / "3 weeks old" / "4 months old". */
+/** "9 days old" / "3 weeks old" / "4 months old", or "Not yet born". */
 export function ageStr(birthday: string): string {
-  const days = Math.floor((Date.now() - new Date(birthday).getTime()) / 86_400_000);
-  if (days < 0) return "";
-  if (days < 14) return `${days} days old`;
+  const [year, month, day] = birthday.split("-").map(Number);
+  const born = year && month && day ? new Date(year, month - 1, day) : new Date(birthday);
+  const days = Math.round((dayStart(new Date()) - dayStart(born)) / 86_400_000);
+  if (days < 0) return "Not yet born";
+  if (days < 14) return days === 1 ? "1 day old" : `${days} days old`;
   if (days < 84) return `${Math.floor(days / 7)} weeks old`;
   return `${Math.floor(days / 30.4)} months old`;
 }

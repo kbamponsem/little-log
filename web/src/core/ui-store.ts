@@ -9,6 +9,7 @@ export type SheetName =
   | "sleep"
   | "detail"
   | "babies"
+  | "add-baby"
   | "theme"
   | "invite"
   | "join";

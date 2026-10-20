@@ -60,6 +60,10 @@ export interface StorageAdapter {
   savePhoto(entryId: string, blob: Blob): Promise<string>;
   /** Points every <img data-eid> under `root` at its photo. */
   fillPhotos(root: HTMLElement): void | Promise<void>;
+  /** Stores a child's profile picture and returns its file name. */
+  saveBabyPhoto(babyId: string, blob: Blob): Promise<string>;
+  /** A data URL for a child's profile picture. */
+  babyPhotoDataUrl(babyId: string): Promise<string>;
 }
 
 /**
@@ -175,6 +179,15 @@ export class TauriAdapter implements StorageAdapter {
         /* photo missing on disk — leave the placeholder */
       }
     }
+  }
+
+  async saveBabyPhoto(babyId: string, blob: Blob): Promise<string> {
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    return this.call<string>("save_baby_photo", { babyId, bytes: Array.from(bytes) });
+  }
+
+  babyPhotoDataUrl(babyId: string): Promise<string> {
+    return this.call<string>("baby_photo_data_url", { babyId });
   }
 }
 

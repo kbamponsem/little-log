@@ -30,7 +30,7 @@ docker compose up -d
 
 Open <http://localhost:8080>. The first account you create becomes the owner;
 the server tells the UI to offer "create account" until then. Everyone else
-joins through an invite link you generate in **Baby → Caregivers**.
+joins through an invite link you generate in **Settings → Sharing**.
 
 ```bash
 docker compose logs -f          # follow logs
@@ -90,7 +90,7 @@ docker compose start
 ```
 
 Restore by unpacking over `./data` with the container stopped. The CSV export
-(**Baby → Your data → Copy as CSV**) is a handy human-readable copy, but it is
+(**Baby → Your data → Export to file**) is a handy human-readable copy, but it is
 not a full backup: it has no photos.
 
 ## Deploying to a home server

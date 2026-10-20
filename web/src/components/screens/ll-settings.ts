@@ -1,23 +1,30 @@
 import { defineComponent, LLComponent } from "../../core/component";
 import { copyText } from "../../core/clipboard";
 import { ui } from "../../core/ui-store";
-import type { Theme } from "../../data/model";
-import { THEMES } from "../../data/model";
+import type { InviteRole } from "../../core/ui-store";
+import type { Caregiver, JoinRequest, Theme } from "../../data/model";
+import { INVITE_ROLES, THEMES } from "../../data/model";
 import { store } from "../../data/store";
 import { ic } from "../../icons";
+import { LlCaregiverRow } from "../ui/ll-caregiver-row";
 import type { LlChipGroup } from "../ui/ll-chip-group";
 import "./ll-settings.css";
 
 /**
- * Settings: everything about *this device* rather than about a child.
+ * Settings: everything about *this device* and the household it shares with,
+ * rather than about the child being logged.
  *
  * The device key, the appearance preference and the note about recovery used to
  * live on the Baby screen, where they sat beside the child's name and birthday
- * as though they belonged to it. They do not: the log is grouped around a
- * child, and this is the one page that is not.
+ * as though they belonged to it. Sharing moved here for the same reason: an
+ * invite code belongs to the whole log, not to one child's profile.
  */
 export class LlSettings extends LLComponent {
   private idRevealed = false;
+  private caregivers: Caregiver[] | null = null;
+  /** Devices asking to be let in; refreshed with the caregivers. */
+  private joins: JoinRequest[] | null = null;
+  private joinPoll = 0;
 
   protected template(): string {
     return `
@@ -28,6 +35,17 @@ export class LlSettings extends LLComponent {
           </button>
           <h1>Settings</h1>
         </header>
+
+        <ll-card class="card" heading="Sharing">
+          <div data-slot="joins"></div>
+          <div data-slot="caregivers"></div>
+          <div class="grp">Invite someone</div>
+          <ll-chip-group data-role="invite-role"></ll-chip-group>
+          <button class="chip invite-button" type="button" data-action="invite">Show invite code</button>
+          <p class="note">Co-parents can edit everything; caregivers can view and add entries. The code carries this child's key, so show it only to someone you trust.</p>
+          <div class="grp">Or join someone else's</div>
+          <button class="chip join-button" type="button" data-action="join">Join with a code</button>
+        </ll-card>
 
         <ll-card class="card" heading="This device">
           <div class="kv">
@@ -56,26 +74,54 @@ export class LlSettings extends LLComponent {
       value: store.theme,
       toggle: false,
     });
+    this.querySelector<LlChipGroup>('[data-role="invite-role"]')?.configure({
+      options: INVITE_ROLES,
+      value: ui.inviteRole,
+      toggle: false,
+    });
     this.renderDevice();
+    this.renderCaregivers();
+    this.renderJoins();
   }
 
   protected subscribe(): void {
     this.watch(store);
+    void this.loadCaregivers();
+
+    // Join requests are written to the database by the sync listener, not
+    // through the store, so nothing here would notice one arriving. While
+    // Settings is the view on show, re-read them so a waiting device can
+    // actually be let in.
+    this.joinPoll = window.setInterval(() => {
+      if (!this.hidden && ui.overlay === "settings") void this.refreshJoins();
+    }, 3000);
+
     this.addEventListener("click", (event) => {
       const action = (event.target as HTMLElement).closest<HTMLElement>("[data-action]")?.dataset
         .action;
       if (action === "close") ui.closeOverlay();
+      if (action === "invite") ui.openSheet({ name: "invite" });
+      if (action === "join") ui.openSheet({ name: "join" });
       if (action === "reveal-id") {
         this.idRevealed = !this.idRevealed;
         this.renderDevice();
       }
       if (action === "copy-id") void this.copyId(event);
+      const join = (event.target as HTMLElement).closest<HTMLElement>("[data-join]");
+      if (join?.dataset.join) void this.resolveJoin(join.dataset.join, join.dataset.accept === "true");
     });
+
     this.addEventListener("ll-change", (event) => {
       const role = (event.target as HTMLElement).dataset.role;
       const value = (event as CustomEvent<{ value: string | null }>).detail.value;
       if (role === "theme" && value) void store.saveTheme(value as Theme);
+      if (role === "invite-role" && value) ui.setInviteRole(value as InviteRole);
     });
+  }
+
+  protected override disconnect(): void {
+    window.clearInterval(this.joinPoll);
+    super.disconnect();
   }
 
   /**
@@ -104,6 +150,108 @@ export class LlSettings extends LLComponent {
     );
     if (!button || !store.deviceId) return;
     button.textContent = (await copyText(store.deviceId)) ? "Copied ✓" : "Copy failed";
+  }
+
+  private async loadCaregivers(): Promise<void> {
+    try {
+      this.caregivers = await store.repo.caregivers();
+    } catch {
+      this.caregivers = [];
+    }
+    this.renderCaregivers();
+    await this.refreshJoins();
+  }
+
+  /** Re-read only the waiting join requests (cheaper than the whole screen). */
+  private async refreshJoins(): Promise<void> {
+    try {
+      this.joins = await store.repo.joinRequests();
+    } catch {
+      // Sync may be off, or there may be no child yet; either way there is
+      // nothing waiting to be shown.
+      this.joins = [];
+    }
+    this.renderJoins();
+  }
+
+  /**
+   * Devices asking to be let in.
+   *
+   * All a request carries is a device id — no name travels with it, and none can
+   * be invented — so the row shows the id until they are in and have a profile.
+   */
+  private renderJoins(): void {
+    const slot = this.querySelector<HTMLElement>('[data-slot="joins"]');
+    if (!slot) return;
+
+    const waiting = (this.joins ?? []).filter((join) => join.state === "pending");
+    if (!waiting.length) {
+      slot.replaceChildren();
+      slot.hidden = true;
+      return;
+    }
+
+    slot.hidden = false;
+    slot.replaceChildren(
+      ...waiting.map((join) => {
+        const row = document.createElement("div");
+        row.className = "baby-join";
+
+        const who = document.createElement("span");
+        who.className = "baby-join-who";
+        who.textContent = `${join.device.slice(0, 8)}… wants to join`;
+        row.append(who);
+
+        const actions = document.createElement("div");
+        actions.className = "baby-join-actions";
+        for (const [label, accept] of [
+          ["Accept", true],
+          ["Decline", false],
+        ] as const) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = accept ? "chip" : "chip delete-button";
+          button.dataset.join = join.device;
+          button.dataset.accept = String(accept);
+          button.textContent = label;
+          actions.append(button);
+        }
+        row.append(actions);
+        return row;
+      }),
+    );
+  }
+
+  private async resolveJoin(device: string, accept: boolean): Promise<void> {
+    try {
+      await store.repo.resolveJoin(device, accept);
+      this.caregivers = null;
+      this.joins = null;
+      await this.loadCaregivers();
+      ui.toast("success", accept ? "They can join now." : "Declined.");
+    } catch (error) {
+      ui.toast("error", error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  private renderCaregivers(): void {
+    const slot = this.querySelector<HTMLElement>('[data-slot="caregivers"]');
+    if (!slot) return;
+    if (!this.caregivers || !this.caregivers.length) {
+      const empty = document.createElement("p");
+      empty.className = "note";
+      empty.textContent = "No caregivers yet.";
+      slot.replaceChildren(empty);
+      return;
+    }
+    slot.replaceChildren(
+      ...this.caregivers.map((caregiver) => {
+        const row = new LlCaregiverRow();
+        row.setAttribute("name", caregiver.name);
+        row.setAttribute("role", caregiver.role);
+        return row;
+      }),
+    );
   }
 }
 

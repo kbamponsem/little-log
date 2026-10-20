@@ -191,6 +191,10 @@ pub fn run() {
     eprintln!("boot: rustls provider installed");
 
     tauri::Builder::default()
+        // Export to file: the save dialog picks a path and grants the fs plugin
+        // access to exactly that path, so no broad filesystem scope is needed.
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             eprintln!("boot: setup start");
             let state = AppState::initialise(app.handle())?;
@@ -220,6 +224,8 @@ pub fn run() {
             commands::delete_all,
             commands::save_photo,
             commands::photo_data_url,
+            commands::save_baby_photo,
+            commands::baby_photo_data_url,
             commands::take_widget_action,
             commands::sync_now,
         ])

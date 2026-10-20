@@ -103,4 +103,12 @@ export class Repository {
   fillPhotos(root: HTMLElement): void | Promise<void> {
     return this.adapter.fillPhotos(root);
   }
+
+  saveBabyPhoto(babyId: string, blob: Blob): Promise<string> {
+    return this.adapter.saveBabyPhoto(babyId, blob);
+  }
+
+  babyPhotoDataUrl(babyId: string): Promise<string> {
+    return this.adapter.babyPhotoDataUrl(babyId);
+  }
 }

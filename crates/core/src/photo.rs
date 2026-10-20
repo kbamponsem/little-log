@@ -29,6 +29,14 @@ pub fn process_photo(bytes: &[u8]) -> Result<Vec<u8>> {
     Ok(out)
 }
 
+/// `baby-<baby id>` — the stem for a child's profile picture.
+///
+/// A child's id and an entry's id are both UUIDs, so the prefix keeps the two
+/// id spaces from ever naming the same file.
+pub fn baby_photo_id(baby_id: &str) -> String {
+    format!("baby-{baby_id}")
+}
+
 /// `<photos>/<entry id>.jpg`
 pub fn photo_path(dir: &Path, entry_id: &str) -> PathBuf {
     dir.join(format!("{entry_id}.jpg"))

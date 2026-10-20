@@ -78,6 +78,8 @@ export interface Baby {
   name: string;
   /** Birthday as `YYYY-MM-DD`, or "". */
   born: string;
+  /** File name of the profile picture in `photos/`, when set. */
+  photo?: string | null;
 }
 
 export interface Caregiver {

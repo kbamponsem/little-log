@@ -1,70 +1,79 @@
-/* Baby screen layout. */
+/* Baby screen: the child's profile. */
 
-/* One caregiver row. */
-.cg {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 8px 0;
-  font-weight: 500;
-}
-
-.cg span:last-child {
-  font-size: 15px;
-  text-align: right;
-  opacity: 0.8;
-}
-
-.invite-button,
-.join-button {
-  margin-top: 8px;
-}
-
-
-.add-baby-button {
-  margin-top: 8px;
-}
-
-/* A device asking to be let in: who, and the two answers. */
-.baby-join {
+.baby-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 8px 0;
+  gap: 14px;
+  padding: 8px 0 12px;
+  margin-bottom: 18px;
 }
 
-.baby-join-who {
-  font-weight: 500;
-  overflow-wrap: anywhere;
-}
-
-.baby-join-actions {
-  display: flex;
-  gap: 8px;
+/* The child's picture on a disc, echoing the Today tiles. Tapping it picks a
+   new one; the initial stands in until there is a picture. */
+.baby-avatar-wrap {
+  position: relative;
   flex-shrink: 0;
 }
 
-/* One child in the household list. */
-.baby-child {  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 8px 0;
-  font-weight: 500;
+.baby-avatar {
+  all: unset;
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--feed);
+  color: var(--on);
+  font-family: var(--disp);
+  font-size: 38px;
+  line-height: 1;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.22);
+  cursor: pointer;
 }
 
-.baby-child-name {
+.baby-avatar:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 3px;
+}
+
+.baby-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* A camera badge on the rim of the avatar, so the picture is obviously
+   changeable. It sits outside the clipped circle so nothing cuts it off. */
+.baby-camera {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--paper);
+  box-shadow: 0 0 0 3px var(--bg);
+  cursor: pointer;
+}
+
+.baby-who {
+  flex: 1;
+  min-width: 0;
+}
+
+.baby-who h1 {
+  margin: 0;
   overflow-wrap: anywhere;
 }
 
-.baby-child-current {
-  font-size: 15px;
-  opacity: 0.8;
-}
-
-.baby-error {
-  color: #e0554a;
+.baby-who .sub {
+  margin: 4px 0 0;
+  font-size: 16px;
 }
 
 .delete-button {

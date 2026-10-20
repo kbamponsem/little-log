@@ -122,7 +122,7 @@ impl EntryPayload {
     }
 }
 
-/// A baby's profile: its name and birthday.
+/// A baby's profile: its name, birthday and picture.
 ///
 /// Deliberately not [`Baby`] — that also carries `theme`, which is a *device*
 /// preference, not something one phone gets to set on another.
@@ -131,6 +131,12 @@ pub struct BabyPayload {
     pub name: String,
     #[serde(default)]
     pub born: String,
+    /// The picture's file name, so a peer can show that one exists.
+    #[serde(default)]
+    pub photo: Option<String>,
+    /// The JPEG itself, hex-encoded, so the picture travels with the profile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub photo_data: Option<String>,
 }
 
 impl BabyPayload {
@@ -139,7 +145,18 @@ impl BabyPayload {
         Self {
             name: baby.name.clone(),
             born: baby.born.clone(),
+            photo: baby.photo.clone(),
+            photo_data: None,
         }
+    }
+
+    /// The authored half of a profile, carrying its photo bytes when this device
+    /// has them. A device that received the profile has no local file to read,
+    /// so it passes `None`.
+    pub fn of_with_photo(baby: &Baby, photo: Option<&[u8]>) -> Self {
+        let mut payload = Self::of(baby);
+        payload.photo_data = photo.map(crate::crypto::to_hex);
+        payload
     }
 
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
@@ -251,6 +268,7 @@ mod baby_tests {
             id: Some("b1".into()),
             name: "Ada".into(),
             born: "2026-02-14".into(),
+            photo: None,
         }
     }
 
@@ -261,6 +279,20 @@ mod baby_tests {
 
         assert_eq!(decoded.name, "Ada");
         assert_eq!(decoded.born, "2026-02-14");
+    }
+
+    #[test]
+    fn a_profile_picture_rides_in_the_payload_as_hex() {
+        let photo: &[u8] = b"\xff\xd8\xff not really a jpeg";
+        let mut source = baby();
+        source.photo = Some("baby-b1.jpg".into());
+
+        let payload = BabyPayload::of_with_photo(&source, Some(photo));
+        let decoded = BabyPayload::from_bytes(&payload.to_bytes().unwrap()).unwrap();
+
+        assert_eq!(decoded.photo.as_deref(), Some("baby-b1.jpg"));
+        let encoded = decoded.photo_data.expect("the photo bytes travel");
+        assert_eq!(crate::crypto::from_hex(&encoded).unwrap().as_slice(), photo);
     }
 
     #[test]

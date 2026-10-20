@@ -10,6 +10,7 @@ const SHEET_TAGS: Record<SheetRequest["name"], string> = {
   sleep: "ll-sleep-sheet",
   detail: "ll-detail-sheet",
   babies: "ll-babies-sheet",
+  "add-baby": "ll-add-baby-sheet",
   invite: "ll-invite-sheet",
   join: "ll-join-sheet",
   theme: "ll-theme-sheet",

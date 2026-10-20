@@ -356,6 +356,7 @@ fn a_baby_without_an_id_is_a_new_baby() {
         id: None,
         name: "Ada".into(),
         born: "2026-03-02".into(),
+        photo: None,
     };
     let saved = repo.save_baby(&twin).unwrap();
 
@@ -484,10 +485,12 @@ fn upgrading_attaches_orphan_entries_and_points_at_the_child() {
         orphan.updated_at = 1_000;
         repo.force_entry(&orphan).unwrap();
 
-        // Rewind to the schema just before the pointer existed.
+        // Rewind to the schema just before the pointer existed (and before the
+        // profile picture column, which a v5 database would not have).
         repo.connection()
             .execute_batch(
                 "ALTER TABLE device_settings DROP COLUMN current_baby_id;
+                 ALTER TABLE babies DROP COLUMN photo;
                  PRAGMA user_version = 5;",
             )
             .unwrap();
