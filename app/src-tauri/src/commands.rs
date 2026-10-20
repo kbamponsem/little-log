@@ -12,6 +12,7 @@ use little_log_core::{csv, invite, photo, validate, CoreError};
 use serde::Serialize;
 use tauri::State;
 
+use crate::sync::SyncStatus;
 use crate::widget;
 use crate::AppState;
 
@@ -415,8 +416,7 @@ pub fn save_baby_photo(
     baby_id: String,
     bytes: Vec<u8>,
 ) -> CmdResult<String> {
-    photo::write_photo(&state.photos_dir(), &photo::baby_photo_id(&baby_id), &bytes)
-        .map_err(fail)
+    photo::write_photo(&state.photos_dir(), &photo::baby_photo_id(&baby_id), &bytes).map_err(fail)
 }
 
 /// The profile picture as a data URL, for the avatar in the WebView.
@@ -445,15 +445,21 @@ pub fn baby_photo_data_url(state: State<'_, AppState>, baby_id: String) -> CmdRe
 /// Returns at once: a round is a catch-up, not something the UI should wait on,
 /// and the screens refresh from the log either way.
 #[tauri::command]
-pub fn sync_now(state: State<'_, AppState>) -> CmdResult<String> {
-    if state.sync().is_none() {
-        return Ok("Peer sync is not running on this device.".to_string());
+pub fn sync_now(state: State<'_, AppState>) -> CmdResult<SyncStatus> {
+    match state.sync() {
+        Some(sync) => {
+            sync.sync_in_background();
+            Ok(sync.snapshot())
+        }
+        None => Ok(SyncStatus::stopped(state.repo().peers().map_err(fail)?)),
     }
-    state.sync_in_background();
-    let peers = state.repo().peers().map_err(fail)?.len();
-    Ok(match peers {
-        0 => "No peers to sync with yet — invite one.".to_string(),
-        1 => "Syncing with 1 peer…".to_string(),
-        count => format!("Syncing with {count} peers…"),
-    })
+}
+
+/// The current sync state and what each known peer last did.
+#[tauri::command]
+pub fn sync_status(state: State<'_, AppState>) -> CmdResult<SyncStatus> {
+    match state.sync() {
+        Some(sync) => Ok(sync.snapshot()),
+        None => Ok(SyncStatus::stopped(state.repo().peers().map_err(fail)?)),
+    }
 }

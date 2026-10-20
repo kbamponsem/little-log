@@ -51,6 +51,9 @@ pub enum SyncMessage {
         topic: String,
         device: String,
         role: Role,
+        /// Where to reach the asking device, so the host can dial it back.
+        #[serde(default)]
+        addr: String,
     },
     /// "Here is where that stands."
     ///
@@ -179,11 +182,18 @@ where
                 topic,
                 device,
                 role,
+                addr,
             } => {
                 // Record it and answer with where it stands. Whether to let this
                 // device in is a person's call, so the answer is usually "still
                 // waiting" and the joiner asks again.
                 repo.save_join_request(&topic, &device, role)?;
+                if !addr.is_empty() {
+                    // The invite only taught the joiner where we are. Saving the
+                    // asker's own ticket makes the address book symmetric, so
+                    // either phone can start the next round.
+                    repo.save_peer(&topic, &addr)?;
+                }
                 let state = repo
                     .join_state(&topic, &device)?
                     .unwrap_or(JoinState::Pending);
@@ -289,6 +299,7 @@ pub async fn ask_to_join<R, W>(
     writer: W,
     invite: &Invite,
     device: &str,
+    addr: &str,
 ) -> Result<JoinReply>
 where
     R: AsyncRead + Unpin,
@@ -299,6 +310,7 @@ where
         topic: invite.topic.clone(),
         device: device.to_string(),
         role: invite.role,
+        addr: addr.to_string(),
     })
     .await?;
 
@@ -437,7 +449,7 @@ mod tests {
             let (server_read, server_write) = tokio::io::split(server);
 
             let (reply, served) = tokio::join!(
-                ask_to_join(client_read, client_write, invite, device),
+                ask_to_join(client_read, client_write, invite, device, "ticket"),
                 serve_round(server_read, server_write, repo),
             );
             // The real accept loop ignores a failed final `Done` when the asker

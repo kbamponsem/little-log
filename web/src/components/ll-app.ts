@@ -1,4 +1,5 @@
 import { defineComponent, LLComponent } from "../core/component";
+import { exit, onBackButtonPress } from "@tauri-apps/api/app";
 import { LL, ui } from "../core/ui-store";
 import type { OpenEntryDetail } from "../core/ui-store";
 import { store } from "../data/store";
@@ -47,9 +48,22 @@ export class LlApp extends LLComponent {
   private showWelcome = false;
   /** Poll for devices waiting to join (see `checkJoinRequests`). */
   private joinPoll = 0;
+  /** Unregister the Android back-button listener, when one was set. */
+  private backUnregister: (() => void) | null = null;
+  /** Pull-to-refresh: the indicator and the gesture's state. */
+  private ptrEl: HTMLElement | null = null;
+  private ptrStartY = 0;
+  private ptrPulling = false;
+  private ptrDist = 0;
+  private ptrRefreshing = false;
+
+  /** How far a pull must go before it refreshes, and where it holds while it does. */
+  private static readonly PTR_THRESHOLD = 64;
+  private static readonly PTR_HOLD = 56;
 
   protected template(): string {
     return `
+      <div class="ptr" data-role="ptr"><span class="ptr-spinner"></span></div>
       <div class="splash" data-role="splash"><span>Little Log</span></div>
       <ll-welcome hidden></ll-welcome>
       <ll-today hidden></ll-today>
@@ -65,6 +79,7 @@ export class LlApp extends LLComponent {
   }
 
   protected mount(): void {
+    this.ptrEl = this.querySelector<HTMLElement>('[data-role="ptr"]');
     // Tile presses are handled by the Today screen, which owns them (ll-today).
     this.on(this, LL.openEntry, (event) => {
       const { id } = (event as CustomEvent<OpenEntryDetail>).detail;
@@ -88,12 +103,25 @@ export class LlApp extends LLComponent {
     // the foreground so the prompt can appear from any tab.
     this.joinPoll = window.setInterval(() => void this.checkJoinRequests(), 4000);
 
+    document.addEventListener("touchstart", this.ptrOnStart, { passive: true });
+    document.addEventListener("touchmove", this.ptrOnMove, { passive: false });
+    document.addEventListener("touchend", this.ptrOnEnd);
+    document.addEventListener("touchcancel", this.ptrOnEnd);
+
+    this.registerBackButton();
+
     this.applyTheme();
     this.syncViews();
   }
 
   protected override disconnect(): void {
     window.clearInterval(this.joinPoll);
+    document.removeEventListener("touchstart", this.ptrOnStart);
+    document.removeEventListener("touchmove", this.ptrOnMove);
+    document.removeEventListener("touchend", this.ptrOnEnd);
+    document.removeEventListener("touchcancel", this.ptrOnEnd);
+    this.backUnregister?.();
+    this.backUnregister = null;
     super.disconnect();
   }
 
@@ -160,6 +188,108 @@ export class LlApp extends LLComponent {
     const theme = store.theme;
     if (theme === "auto") delete document.documentElement.dataset.theme;
     else document.documentElement.dataset.theme = theme;
+  }
+
+  /* ------------------------------------------------- Android back button */
+
+  /**
+   * Take over the Android back button so it walks the app's own stack instead
+   * of closing the activity: sheet → Settings → back to Today → exit.
+   */
+  private registerBackButton(): void {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    void onBackButtonPress(() => this.onBack())
+      .then((listener) => {
+        this.backUnregister = () => listener.unregister();
+      })
+      .catch(() => undefined);
+  }
+
+  private onBack(): void {
+    if (ui.sheet) {
+      ui.closeSheet();
+      return;
+    }
+    if (ui.overlay === "settings") {
+      ui.closeOverlay();
+      return;
+    }
+    if (ui.tab !== "today") {
+      ui.go("today");
+      return;
+    }
+    void exit(0);
+  }
+
+  /* ---------------------------------------------------- pull to refresh */
+
+  /** A pull is only meaningful at the top, with nothing open and nothing typed. */
+  private canPull(event: TouchEvent): boolean {
+    if (this.ptrRefreshing || ui.sheet) return false;
+    if (window.scrollY > 0) return false;
+    const active = document.activeElement;
+    if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return false;
+    const target = event.target as HTMLElement;
+    return !target.closest("ll-sheet-host, .sheet, dialog");
+  }
+
+  private readonly ptrOnStart = (event: TouchEvent): void => {
+    if (this.ptrRefreshing) return;
+    this.ptrStartY = event.touches[0]?.clientY ?? 0;
+    this.ptrDist = 0;
+    this.ptrPulling = this.canPull(event);
+  };
+
+  private readonly ptrOnMove = (event: TouchEvent): void => {
+    if (!this.ptrPulling) return;
+    const dy = (event.touches[0]?.clientY ?? 0) - this.ptrStartY;
+    if (dy <= 0) {
+      this.ptrDist = 0;
+      this.setPtr(0);
+      return;
+    }
+    if (window.scrollY > 0) {
+      this.ptrPulling = false;
+      this.setPtr(0);
+      return;
+    }
+    event.preventDefault();
+    this.ptrDist = Math.min(dy * 0.45, 120);
+    this.setPtr(this.ptrDist);
+  };
+
+  private readonly ptrOnEnd = (): void => {
+    if (!this.ptrPulling) return;
+    this.ptrPulling = false;
+    if (this.ptrDist >= LlApp.PTR_THRESHOLD) void this.runRefresh();
+    else this.setPtr(0);
+  };
+
+  /** Hold the spinner, reload the log and nudge a sync, then settle. */
+  private async runRefresh(): Promise<void> {
+    this.ptrRefreshing = true;
+    this.setPtr(LlApp.PTR_HOLD, true);
+    this.ptrEl?.classList.add("spinning");
+
+    const started = Date.now();
+    try {
+      await Promise.allSettled([store.refresh(), store.repo.forceSync()]);
+    } finally {
+      const remaining = 500 - (Date.now() - started);
+      if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining));
+      this.ptrEl?.classList.remove("spinning");
+      this.setPtr(0, true);
+      this.ptrRefreshing = false;
+      this.ptrDist = 0;
+    }
+  }
+
+  /** Slide the indicator to `dist` (px from the top); `-48` hides it. */
+  private setPtr(dist: number, animate = false): void {
+    if (!this.ptrEl) return;
+    const y = Math.max(dist - 48, -56);
+    this.ptrEl.classList.toggle("ptr-anim", animate);
+    this.ptrEl.style.transform = `translate(-50%, ${y}px)`;
   }
 }
 

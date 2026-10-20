@@ -228,6 +228,7 @@ pub fn run() {
             commands::baby_photo_data_url,
             commands::take_widget_action,
             commands::sync_now,
+            commands::sync_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Little Log");

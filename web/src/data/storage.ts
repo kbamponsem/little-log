@@ -1,5 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Baby, Caregiver, Entry, JoinProgress, JoinRequest, Role, Theme } from "./model";
+import type {
+  Baby,
+  Caregiver,
+  Entry,
+  JoinProgress,
+  JoinRequest,
+  Role,
+  SyncStatus,
+  Theme,
+} from "./model";
 
 /**
  * The storage adapter contract.
@@ -45,6 +54,11 @@ export interface StorageAdapter {
   joinRequests(): Promise<JoinRequest[]>;
   /** Let one in, or turn it down. Owner or co-parent only. */
   resolveJoin(device: string, accept: boolean): Promise<void>;
+
+  /** Current sync state and per-peer progress. */
+  syncStatus(): Promise<SyncStatus>;
+  /** Start a sync round now; returns the state immediately after it starts. */
+  forceSync(): Promise<SyncStatus>;
 
   csv(): Promise<string>;
   deleteAll(): Promise<void>;
@@ -150,6 +164,14 @@ export class TauriAdapter implements StorageAdapter {
 
   resolveJoin(device: string, accept: boolean): Promise<void> {
     return this.call<void>("resolve_join", { device, accept });
+  }
+
+  syncStatus(): Promise<SyncStatus> {
+    return this.call<SyncStatus>("sync_status");
+  }
+
+  forceSync(): Promise<SyncStatus> {
+    return this.call<SyncStatus>("sync_now");
   }
 
   /* data */

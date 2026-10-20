@@ -73,6 +73,34 @@ export interface JoinRequest {
   state: JoinState;
 }
 
+/** How the last sync attempt with one peer went. */
+export type PeerSyncState = "idle" | "syncing" | "ok" | "error";
+
+/** One device this log knows how to reach. */
+export interface SyncPeer {
+  /** The stored ticket; useful for diagnostics. */
+  addr: string;
+  /** The peer's device id, when the ticket decodes. */
+  peer_id: string | null;
+  state: PeerSyncState;
+  last_synced_at: number | null;
+  /** What this peer moved in the last completed round. */
+  received: number;
+  sent: number;
+  error: string | null;
+}
+
+/** What the Settings sync card renders. */
+export interface SyncStatus {
+  running: boolean;
+  last_synced_at: number | null;
+  /** Totals for the last completed round. */
+  received: number;
+  sent: number;
+  peers: SyncPeer[];
+  error: string | null;
+}
+
 export interface Baby {
   id?: string;
   name: string;

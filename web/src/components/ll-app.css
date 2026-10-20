@@ -9,3 +9,42 @@
   font-family: var(--disp);
   font-size: clamp(34px, 9vw, 48px);
 }
+
+/* Pull-to-refresh: a native-style disc that slides down as you pull and spins
+   while the log reloads. Hidden by default; the transform comes from JS. */
+.ptr {
+  position: fixed;
+  top: 8px;
+  left: 50%;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--paper);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
+  transform: translate(-50%, -56px);
+}
+
+.ptr.ptr-anim {
+  transition: transform 0.2s ease;
+}
+
+.ptr-spinner {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 3px solid var(--chip);
+  border-top-color: var(--ink);
+}
+
+.ptr.spinning .ptr-spinner {
+  animation: ptr-spin 0.7s linear infinite;
+}
+
+@keyframes ptr-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

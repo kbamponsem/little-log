@@ -170,10 +170,11 @@ pub async fn join_once(
     addr: EndpointAddr,
     invite: &Invite,
     device: &str,
+    self_addr: &str,
 ) -> Result<JoinReply> {
     let connection = endpoint.connect(addr, ALPN).await.map_err(net_error)?;
     let (send, recv) = connection.open_bi().await.map_err(net_error)?;
-    let reply = ask_to_join(recv, send, invite, device).await;
+    let reply = ask_to_join(recv, send, invite, device, self_addr).await;
     connection.close(0u32.into(), b"done");
     reply
 }

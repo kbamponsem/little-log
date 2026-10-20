@@ -1,4 +1,4 @@
-import type { Baby, Caregiver, Entry, JoinProgress, JoinRequest, Role, Theme } from "./model";
+import type { Baby, Caregiver, Entry, JoinProgress, JoinRequest, Role, SyncStatus, Theme } from "./model";
 import type { StorageAdapter } from "./storage";
 
 /**
@@ -80,6 +80,14 @@ export class Repository {
 
   resolveJoin(device: string, accept: boolean): Promise<void> {
     return this.adapter.resolveJoin(device, accept);
+  }
+
+  syncStatus(): Promise<SyncStatus> {
+    return this.adapter.syncStatus();
+  }
+
+  forceSync(): Promise<SyncStatus> {
+    return this.adapter.forceSync();
   }
 
   /* data */

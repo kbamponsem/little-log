@@ -84,6 +84,7 @@ async fn a_device_that_redeems_an_invite_ends_up_with_the_same_log() {
         // The other phone: nothing but the link.
         let mut joiner = Device::with_database(None).await;
         assert!(joiner.repo.babies().unwrap().is_empty());
+        let joiner_ticket = encode_addr(&joiner.endpoint.addr());
 
         let invite = Invite::decode(&link).unwrap();
         invite.remember(&joiner.repo).unwrap();
@@ -92,14 +93,28 @@ async fn a_device_that_redeems_an_invite_ends_up_with_the_same_log() {
         // and the link on its own has got the joiner nowhere.
         let device = joiner.repo.device_key().unwrap().id();
         let addr = decode_addr(&invite.addr).unwrap();
-        let asked = join_once(&joiner.endpoint, addr.clone(), &invite, &device)
-            .await
-            .unwrap();
+        let asked = join_once(
+            &joiner.endpoint,
+            addr.clone(),
+            &invite,
+            &device,
+            &joiner_ticket,
+        )
+        .await
+        .unwrap();
         assert_eq!(asked.state, JoinState::Pending);
         assert!(asked.key.is_none(), "a pending reply carries no key");
         assert!(
             joiner.repo.group_key(&invite.topic).unwrap().is_none(),
             "and the joiner still cannot read a thing"
+        );
+        assert!(
+            parent
+                .repo
+                .peers_for(&invite.topic)
+                .unwrap()
+                .contains(&joiner_ticket),
+            "the host learned where to reach the joiner from the ask"
         );
 
         // The parent's owner taps Accept.
@@ -109,9 +124,15 @@ async fn a_device_that_redeems_an_invite_ends_up_with_the_same_log() {
             .unwrap();
 
         // The joiner asks again, and this time is let in.
-        let granted = join_once(&joiner.endpoint, addr.clone(), &invite, &device)
-            .await
-            .unwrap();
+        let granted = join_once(
+            &joiner.endpoint,
+            addr.clone(),
+            &invite,
+            &device,
+            &joiner_ticket,
+        )
+        .await
+        .unwrap();
         assert_eq!(granted.state, JoinState::Accepted);
         invite
             .accept_key(&joiner.repo, granted.key.as_deref().expect("the key"))
@@ -180,6 +201,7 @@ async fn redeeming_does_not_take_the_log_over() {
         .encode();
 
         let mut joiner = Device::with_database(None).await;
+        let joiner_ticket = encode_addr(&joiner.endpoint.addr());
         let invite = Invite::decode(&link).unwrap();
         invite.remember(&joiner.repo).unwrap();
 
@@ -196,18 +218,30 @@ async fn redeeming_does_not_take_the_log_over() {
                 .is_err(),
             "there is no request to accept yet"
         );
-        let asked = join_once(&joiner.endpoint, addr.clone(), &invite, &device)
-            .await
-            .unwrap();
+        let asked = join_once(
+            &joiner.endpoint,
+            addr.clone(),
+            &invite,
+            &device,
+            &joiner_ticket,
+        )
+        .await
+        .unwrap();
         assert_eq!(asked.state, JoinState::Pending);
 
         parent
             .repo
             .resolve_join_request(&invite.topic, &device, JoinState::Accepted)
             .unwrap();
-        let granted = join_once(&joiner.endpoint, addr.clone(), &invite, &device)
-            .await
-            .unwrap();
+        let granted = join_once(
+            &joiner.endpoint,
+            addr.clone(),
+            &invite,
+            &device,
+            &joiner_ticket,
+        )
+        .await
+        .unwrap();
         invite
             .accept_key(&joiner.repo, granted.key.as_deref().expect("the key"))
             .unwrap();

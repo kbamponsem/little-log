@@ -11,20 +11,92 @@
 //! has to handle.
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
+use little_log_core::validate::now_millis;
 use little_log_core::{CoreError, Repo};
 use little_log_sync::{
     bind, decode_addr, dialable_addr, encode_addr, join_once, serve, sync_once, Endpoint, Relays,
     Router,
 };
+use serde::Serialize;
 use tokio::runtime::Runtime;
+
+/// How one peer's last attempt went.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PeerSyncState {
+    #[default]
+    Idle,
+    Syncing,
+    Ok,
+    Error,
+}
+
+/// One device this log knows how to reach.
+#[derive(Clone, Debug, Serialize)]
+pub struct PeerSyncStatus {
+    /// The stored ticket, so an undecodable address can still be shown.
+    pub addr: String,
+    /// The peer's device id, when the ticket decodes.
+    pub peer_id: Option<String>,
+    pub state: PeerSyncState,
+    pub last_synced_at: Option<i64>,
+    /// What this peer moved in the last completed round.
+    pub received: usize,
+    pub sent: usize,
+    pub error: Option<String>,
+}
+
+impl PeerSyncStatus {
+    fn idle(addr: String) -> Self {
+        let peer_id = decode_addr(&addr).ok().map(|addr| addr.id.to_string());
+        Self {
+            addr,
+            peer_id,
+            state: PeerSyncState::Idle,
+            last_synced_at: None,
+            received: 0,
+            sent: 0,
+            error: None,
+        }
+    }
+}
+
+/// What the Settings sync card shows.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct SyncStatus {
+    pub running: bool,
+    pub last_synced_at: Option<i64>,
+    /// Totals for the last completed round.
+    pub received: usize,
+    pub sent: usize,
+    pub peers: Vec<PeerSyncStatus>,
+    pub error: Option<String>,
+}
+
+impl SyncStatus {
+    /// No endpoint on this device: still show the peers we know about.
+    pub fn stopped(addrs: Vec<String>) -> Self {
+        Self {
+            running: false,
+            last_synced_at: None,
+            received: 0,
+            sent: 0,
+            peers: addrs.into_iter().map(PeerSyncStatus::idle).collect(),
+            error: Some("Peer sync is not running on this device.".to_string()),
+        }
+    }
+}
 
 /// The app's peer sync, or the reason it is not running.
 pub struct SyncService {
     runtime: Runtime,
     endpoint: Endpoint,
     database: PathBuf,
+    /// Shared with the background rounds and read by the Settings screen.
+    status: Arc<Mutex<SyncStatus>>,
     /// Held so the accept loop lives as long as the service does.
     _router: Router,
 }
@@ -58,6 +130,7 @@ impl SyncService {
             runtime,
             endpoint,
             database,
+            status: Arc::new(Mutex::new(SyncStatus::default())),
             _router: router,
         })
     }
@@ -110,11 +183,39 @@ impl SyncService {
         let endpoint = self.endpoint.clone();
         let invite = invite.clone();
         let device = device.to_string();
-        let reply = self
-            .runtime
-            .block_on(async move { join_once(&endpoint, addr, &invite, &device).await });
+        // Tell the host where to reach us too, so its peer list is not empty
+        // and either side can start the next round.
+        let self_addr = encode_addr(&self.endpoint.addr());
+        let reply = self.runtime.block_on(async move {
+            join_once(&endpoint, addr, &invite, &device, &self_addr).await
+        });
         eprintln!("sync: ask_to_join done");
         reply
+    }
+
+    /// A snapshot for the UI. Peers come from the database as well, so a newly
+    /// remembered invite shows up before the first round touches it.
+    pub fn snapshot(&self) -> SyncStatus {
+        let mut status = self.lock_status().clone();
+        if let Ok(repo) = Repo::open(&self.database) {
+            if let Ok(addrs) = repo.peers() {
+                for addr in addrs {
+                    if !status.peers.iter().any(|peer| peer.addr == addr) {
+                        status.peers.push(PeerSyncStatus::idle(addr));
+                    }
+                }
+            }
+        }
+        status
+            .peers
+            .sort_by(|a, b| a.peer_id.cmp(&b.peer_id).then_with(|| a.addr.cmp(&b.addr)));
+        status
+    }
+
+    fn lock_status(&self) -> std::sync::MutexGuard<'_, SyncStatus> {
+        self.status
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     /// A round with every peer this device knows, in the background.
@@ -124,29 +225,102 @@ impl SyncService {
     pub fn sync_in_background(self: &Arc<Self>) {
         let database = self.database.clone();
         let endpoint = self.endpoint.clone();
+
         let peers = match Repo::open(&database).and_then(|repo| repo.peers()) {
             Ok(peers) => peers,
             Err(error) => {
                 eprintln!("sync: could not list peers: {error}");
+                let mut status = self.lock_status();
+                status.running = false;
+                status.error = Some(error.to_string());
                 return;
             }
         };
 
+        {
+            let mut status = self.lock_status();
+            if status.running {
+                return;
+            }
+            status.running = true;
+            status.received = 0;
+            status.sent = 0;
+            status.error = None;
+            status.peers = peers.iter().cloned().map(PeerSyncStatus::idle).collect();
+            for peer in &mut status.peers {
+                peer.state = PeerSyncState::Syncing;
+            }
+        }
+
+        if peers.is_empty() {
+            let mut status = self.lock_status();
+            status.running = false;
+            status.last_synced_at = Some(now_millis());
+            return;
+        }
+
+        let pending = Arc::new(AtomicUsize::new(peers.len()));
         for addr in peers {
             let database = database.clone();
             let endpoint = endpoint.clone();
+            let status = self.status.clone();
+            let pending = pending.clone();
+
             self.runtime.spawn(async move {
-                let Ok(mut repo) = Repo::open(&database) else {
-                    return;
-                };
-                let Ok(topics) = repo.topics() else { return };
-                let Ok(addr) = decode_addr(&addr) else { return };
-                match sync_once(&endpoint, addr, &mut repo, &topics).await {
-                    Ok(report) if report.received > 0 || report.sent > 0 => {
-                        eprintln!("sync: moved {} in, {} out", report.received, report.sent);
+                let outcome: Result<little_log_sync::SyncReport, String> = async {
+                    let mut repo = Repo::open(&database).map_err(|error| error.to_string())?;
+                    let topics = repo.topics().map_err(|error| error.to_string())?;
+                    let addr = decode_addr(&addr).map_err(|error| error.to_string())?;
+                    sync_once(&endpoint, addr, &mut repo, &topics)
+                        .await
+                        .map_err(|error| error.to_string())
+                }
+                .await;
+
+                let now = now_millis();
+                {
+                    let mut status = status
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    if let Some(peer) = status.peers.iter_mut().find(|peer| peer.addr == addr) {
+                        match &outcome {
+                            Ok(report) => {
+                                peer.state = PeerSyncState::Ok;
+                                peer.last_synced_at = Some(now);
+                                peer.received = report.received;
+                                peer.sent = report.sent;
+                                peer.error = None;
+                                status.received += report.received;
+                                status.sent += report.sent;
+                            }
+                            Err(error) => {
+                                peer.state = PeerSyncState::Error;
+                                peer.error = Some(error.clone());
+                            }
+                        }
                     }
-                    Ok(_) => {}
-                    Err(error) => eprintln!("sync: round failed: {error}"),
+                }
+
+                // The last peer to finish closes the round, so the UI can stop
+                // showing a spinner even when one peer was unreachable.
+                if pending.fetch_sub(1, Ordering::SeqCst) == 1 {
+                    let mut status = status
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    status.running = false;
+                    status.last_synced_at = Some(now);
+                    let failed = status
+                        .peers
+                        .iter()
+                        .filter(|peer| peer.state == PeerSyncState::Error)
+                        .count();
+                    status.error = (failed > 0).then(|| {
+                        if failed == 1 {
+                            "One peer could not be reached.".to_string()
+                        } else {
+                            format!("{failed} peers could not be reached.")
+                        }
+                    });
                 }
             });
         }

@@ -18,15 +18,23 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: 52px;
+  height: 52px;
+  margin-left: -12px;
+  flex-shrink: 0;
   border-radius: 999px;
+  background: var(--chip);
+  color: var(--ink);
   cursor: pointer;
 }
 
-.back:hover,
+.back:hover {
+  opacity: 0.85;
+}
+
 .back:focus-visible {
-  background: var(--chip);
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
 }
 
 /* A label/value row for the device id, then its chips. */
@@ -78,4 +86,69 @@
 
 .delete-button {
   color: #e0554a;
+}
+
+/* Sync: status line, force button, then one row per known peer. */
+.settings .sync-line {
+  margin: 0 0 10px;
+  font-weight: 600;
+}
+
+.settings .sync-peer {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 0;
+  border-top: 2px solid var(--chip);
+}
+
+.settings .sync-peer:first-child {
+  border-top: 0;
+}
+
+.settings .sync-peer-who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* The state dot: grey idle, amber syncing, green ok, red error. */
+.settings .sync-peer-who::before {
+  content: "";
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--chip);
+}
+
+.settings .sync-peer.is-syncing .sync-peer-who::before {
+  background: #d9a441;
+}
+
+.settings .sync-peer.is-ok .sync-peer-who::before {
+  background: #2e8b57;
+}
+
+.settings .sync-peer.is-error .sync-peer-who::before {
+  background: #b3261e;
+}
+
+.settings .sync-peer-meta {
+  padding-left: 18px;
+  font-size: 15px;
+  opacity: 0.8;
+}
+
+.settings .sync-peer-error {
+  padding-left: 18px;
+  color: #a8322d;
+  font-size: 14px;
+}
+
+.settings .chip[disabled] {
+  opacity: 0.6;
+  pointer-events: none;
 }
