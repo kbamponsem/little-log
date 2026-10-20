@@ -67,6 +67,12 @@ pub struct EntryPayload {
     pub note: Option<String>,
     #[serde(default)]
     pub photo: Option<String>,
+    /// The JPEG itself, hex-encoded, so a photo travels with its event.
+    ///
+    /// `photo` stays the local file name: the device that took the photo reads
+    /// it from `photos/`, while a peer that received the entry reads these bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub photo_data: Option<String>,
 }
 
 impl EntryPayload {
@@ -90,7 +96,19 @@ impl EntryPayload {
             wake_mood: entry.wake_mood,
             note: entry.note.clone(),
             photo: entry.photo.clone(),
+            photo_data: None,
         }
+    }
+
+    /// The authored half of an entry, carrying its photo bytes when this device
+    /// has them.
+    ///
+    /// A device that received the entry over sync has no local file to read, so
+    /// it passes `None`; the older event that carried the image still does.
+    pub fn of_with_photo(entry: &Entry, photo: Option<&[u8]>) -> Self {
+        let mut payload = Self::of(entry);
+        payload.photo_data = photo.map(crate::crypto::to_hex);
+        payload
     }
 
     /// Encode for sealing into an event.
@@ -155,6 +173,20 @@ mod entry_tests {
         assert_eq!(decoded, payload);
         assert_eq!(decoded.amount, Some(120));
         assert_eq!(decoded.note.as_deref(), Some("took it all"));
+    }
+
+    #[test]
+    fn a_photo_rides_in_the_payload_as_hex() {
+        let photo: &[u8] = b"\xff\xd8\xff not really a jpeg";
+        let mut source = entry();
+        source.photo = Some(format!("{}.jpg", source.id));
+
+        let payload = EntryPayload::of_with_photo(&source, Some(photo));
+        let decoded = EntryPayload::from_bytes(&payload.to_bytes().unwrap()).unwrap();
+
+        assert_eq!(decoded.photo, source.photo, "the file name still travels");
+        let encoded = decoded.photo_data.expect("the photo bytes travel");
+        assert_eq!(crate::crypto::from_hex(&encoded).unwrap().as_slice(), photo);
     }
 
     #[test]

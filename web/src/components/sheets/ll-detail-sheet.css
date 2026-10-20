@@ -1,0 +1,18 @@
+/* The full photo in an entry's detail sheet. It must never render at the
+   photo's natural width (up to 1280 px). */
+.bigph {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  max-height: min(42vh, 360px);
+  margin: 4px auto 14px;
+  border-radius: 18px;
+  object-fit: contain;
+  background: var(--chip);
+}
+
+/* fillPhotos adds `src` only once the bytes have arrived; an empty image would
+   leave a broken-image box. */
+.bigph:not([src]) {
+  display: none;
+}

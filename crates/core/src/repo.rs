@@ -717,6 +717,36 @@ impl Repo {
             .map_err(CoreError::from)
     }
 
+    /// The newest photo bytes an entry's events carry, if any.
+    ///
+    /// `photos/<entry>.jpg` is local to the device that took the photo. A peer
+    /// that received the entry has the bytes inside the event payload instead,
+    /// so the UI can be served from either source.
+    pub fn photo_bytes(&self, entry_id: &str) -> Result<Option<Vec<u8>>> {
+        let events = self.log().for_entry(entry_id)?;
+        let Some(newest) = events.last() else {
+            return Ok(None);
+        };
+        let Some(group) = self.group_key(&newest.topic)? else {
+            return Ok(None);
+        };
+
+        for event in events.iter().rev() {
+            let Ok(plain) = event.open(&group) else {
+                continue;
+            };
+            let Ok(payload) = crate::payload::EntryPayload::from_bytes(&plain) else {
+                continue;
+            };
+            if let Some(encoded) = payload.photo_data {
+                if let Some(bytes) = crate::crypto::from_hex(&encoded) {
+                    return Ok(Some(bytes));
+                }
+            }
+        }
+        Ok(None)
+    }
+
     /// Store a locally-made entry: validated, then last-write-wins.
     /// Returns `false` when the stored row is newer.
     pub fn save_entry(&self, entry: &Entry) -> Result<bool> {

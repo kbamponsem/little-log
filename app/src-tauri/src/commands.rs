@@ -84,8 +84,18 @@ pub fn list_entries(state: State<'_, AppState>) -> CmdResult<Vec<Entry>> {
 /// construction.
 #[tauri::command]
 pub fn save_entry(state: State<'_, AppState>, entry: Entry) -> CmdResult<Entry> {
-    let repo = state.repo();
     let mut entry = entry;
+
+    // Carry the photo in the event: a peer has no access to this device's
+    // photos/ directory, so the event is what makes the image travel with it.
+    // Read it before taking the repo lock; it is file I/O, not database work.
+    let photo = if entry.photo.is_some() {
+        photo::read_photo(&state.photos_dir(), &entry.id).ok()
+    } else {
+        None
+    };
+
+    let repo = state.repo();
 
     if entry.baby_id.is_none() {
         entry.baby_id = repo.current_baby().map_err(fail)?.and_then(|baby| baby.id);
@@ -96,7 +106,7 @@ pub fn save_entry(state: State<'_, AppState>, entry: Entry) -> CmdResult<Entry> 
     // sorts before something already stored.
     let mut clock = repo.clock(key.id()).map_err(fail)?;
     let stored = repo
-        .record_new_entry(&key, &mut clock, &entry)
+        .record_new_entry_with_photo(&key, &mut clock, &entry, photo.as_deref())
         .map_err(fail)?;
     drop(repo);
 
@@ -370,9 +380,19 @@ pub fn save_photo(
 }
 
 /// Photo bytes as a data URL, for `<img>` in the WebView.
+///
+/// Prefer the local file. A device that received the entry over sync has no
+/// file, so fall back to the copy carried inside the entry's event.
 #[tauri::command]
 pub fn photo_data_url(state: State<'_, AppState>, entry_id: String) -> CmdResult<String> {
-    let bytes = photo::read_photo(&state.photos_dir(), &entry_id).map_err(fail)?;
+    let bytes = match photo::read_photo(&state.photos_dir(), &entry_id) {
+        Ok(bytes) => bytes,
+        Err(_) => state
+            .repo()
+            .photo_bytes(&entry_id)
+            .map_err(fail)?
+            .ok_or_else(|| "photo not found on this device".to_string())?,
+    };
     let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
     Ok(format!("data:image/jpeg;base64,{encoded}"))
 }

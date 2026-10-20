@@ -104,13 +104,26 @@ impl Repo {
         entry: &Entry,
         kind: EventKind,
     ) -> Result<Entry> {
+        self.record_entry_with_photo(key, clock, entry, kind, None)
+    }
+
+    /// [`Self::record_entry`], carrying the photo bytes in the event so the
+    /// image reaches a peer along with the entry.
+    pub fn record_entry_with_photo(
+        &self,
+        key: &DeviceKey,
+        clock: &mut Clock,
+        entry: &Entry,
+        kind: EventKind,
+        photo: Option<&[u8]>,
+    ) -> Result<Entry> {
         let Some(topic) = entry.baby_id.clone() else {
             return Err(CoreError::invalid("an entry needs a child to belong to"));
         };
         let group = self
             .group_key(&topic)?
             .ok_or_else(|| CoreError::invalid("this device does not hold that child's key"))?;
-        let payload = EntryPayload::of(entry).to_bytes()?;
+        let payload = EntryPayload::of_with_photo(entry, photo).to_bytes()?;
 
         let event = Event::seal(
             key,
@@ -135,12 +148,23 @@ impl Repo {
         clock: &mut Clock,
         entry: &Entry,
     ) -> Result<Entry> {
+        self.record_new_entry_with_photo(key, clock, entry, None)
+    }
+
+    /// [`Self::record_new_entry`], carrying the photo bytes in the event.
+    pub fn record_new_entry_with_photo(
+        &self,
+        key: &DeviceKey,
+        clock: &mut Clock,
+        entry: &Entry,
+        photo: Option<&[u8]>,
+    ) -> Result<Entry> {
         let kind = if self.log().for_entry(&entry.id)?.is_empty() {
             EventKind::Create
         } else {
             EventKind::Edit
         };
-        self.record_entry(key, clock, entry, kind)
+        self.record_entry_with_photo(key, clock, entry, kind, photo)
     }
 
     /// Tombstone an entry.
@@ -323,6 +347,37 @@ mod tests {
         assert_eq!(events.len(), 1, "the row is a fold of one event");
         assert_eq!(events[0].kind, EventKind::Create);
         assert_eq!(events[0].topic, baby.id.clone().unwrap());
+    }
+
+    #[test]
+    fn a_photo_travels_in_the_event_and_survives_an_edit_without_it() {
+        let mut device = Device::new();
+        let baby = device.create("Ada");
+        let mut entry = Entry::new(crate::model::EntryKind::Diaper, 1_700_000_000_000);
+        entry.baby_id = baby.id.clone();
+        let photo: &[u8] = b"jpeg-ish bytes";
+
+        device
+            .repo
+            .record_new_entry_with_photo(&device.key, &mut device.clock, &entry, Some(photo))
+            .unwrap();
+        assert_eq!(
+            device.repo.photo_bytes(&entry.id).unwrap().as_deref(),
+            Some(photo)
+        );
+
+        // An edit made on a device that has no local photo file must not drop
+        // the image: the older event still carries it.
+        let mut changed = entry.clone();
+        changed.note = Some("from the other phone".into());
+        device
+            .repo
+            .record_new_entry_with_photo(&device.key, &mut device.clock, &changed, None)
+            .unwrap();
+        assert_eq!(
+            device.repo.photo_bytes(&entry.id).unwrap().as_deref(),
+            Some(photo)
+        );
     }
 
     #[test]

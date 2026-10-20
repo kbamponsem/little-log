@@ -3,6 +3,7 @@ import { LLSheet } from "../../core/sheet";
 import type { Entry } from "../../data/model";
 import { entryDetail, entryTitle, esc, setT, tv } from "../../format";
 import { repo } from "../../data/store";
+import "./ll-detail-sheet.css";
 
 /** Edit or delete an existing entry. */
 export class LlDetailSheet extends LLSheet {
