@@ -8,6 +8,7 @@ const SHEET_TAGS: Record<SheetRequest["name"], string> = {
   feed: "ll-feed-sheet",
   diaper: "ll-diaper-sheet",
   sleep: "ll-sleep-sheet",
+  mood: "ll-mood-sheet",
   detail: "ll-detail-sheet",
   babies: "ll-babies-sheet",
   "add-baby": "ll-add-baby-sheet",
@@ -30,9 +31,14 @@ interface ConfigurableSheet extends SheetElement {
  * with `ui.closeSheet()` (see core/sheet.ts).
  */
 export class LlSheetHost extends LLComponent {
+  /** How long a closing sheet takes to slide away; mirrors `--dur-exit`. */
+  private static readonly CLOSE_MS = 200;
+
   private mounted: SheetElement | null = null;
   private rendered: SheetRequest | null = null;
   private opener: HTMLElement | null = null;
+  /** A sheet that has been closed but is still animating out. */
+  private leaving: { node: HTMLElement; timer: number } | null = null;
 
   protected template(): string {
     return `<div class="scrim" data-scrim></div><section class="sheet" data-sheet></section>`;
@@ -52,6 +58,7 @@ export class LlSheetHost extends LLComponent {
 
   protected disconnect(): void {
     document.removeEventListener("keydown", this.onKeydown);
+    this.dropLeaving();
   }
 
   private readonly onKeydown = (event: KeyboardEvent): void => {
@@ -72,6 +79,9 @@ export class LlSheetHost extends LLComponent {
     const container = $<HTMLElement>("[data-sheet]", this);
     if (!container) return;
 
+    // A sheet still sliding out would sit behind the new one.
+    this.dropLeaving();
+
     this.opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
     const sheet = document.createElement(SHEET_TAGS[request.name]) as ConfigurableSheet;
@@ -90,14 +100,40 @@ export class LlSheetHost extends LLComponent {
   private teardown(): void {
     const sheet = this.mounted;
     const container = $<HTMLElement>("[data-sheet]", this);
+    const scrim = $("[data-scrim]", this);
     this.mounted = null;
+    const wasOpen = container?.classList.contains("open") ?? false;
     container?.classList.remove("open");
-    $("[data-scrim]", this)?.classList.remove("open");
+    scrim?.classList.remove("open");
     if (!sheet) return;
-    sheet.remove();
+
+    // Removing the node straight away makes the sheet vanish instead of
+    // sliding away. It stays in the tree until the transition ends, unless
+    // the device asked for less motion.
+    if (wasOpen && !this.prefersReducedMotion()) {
+      this.leaving = {
+        node: sheet,
+        timer: window.setTimeout(() => this.dropLeaving(), LlSheetHost.CLOSE_MS),
+      };
+    } else {
+      sheet.remove();
+    }
+
     sheet.onSheetClosed?.();
     if (this.opener?.isConnected) this.opener.focus({ preventScroll: true });
     this.opener = null;
+  }
+
+  /** Remove the sheet that was closing, if there still is one. */
+  private dropLeaving(): void {
+    if (!this.leaving) return;
+    window.clearTimeout(this.leaving.timer);
+    this.leaving.node.remove();
+    this.leaving = null;
+  }
+
+  private prefersReducedMotion(): boolean {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   }
 }
 

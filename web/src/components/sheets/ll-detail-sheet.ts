@@ -17,7 +17,13 @@ export class LlDetailSheet extends LLSheet {
     const entry = this.entry();
     if (!entry) return `<button class="x" type="button" data-action="close">×</button>`;
     const sleep = entry.kind === "sleep";
-    const kindTitle = sleep ? "Nap" : entry.kind === "feed" ? "Feeding" : "Diaper change";
+    const kindTitle = sleep
+      ? "Nap"
+      : entry.kind === "feed"
+        ? "Feeding"
+        : entry.kind === "mood"
+          ? "Mood"
+          : "Diaper change";
     const photo = entry.photo ? `<img class="bigph" data-eid="${esc(entry.id)}" alt="Diaper photo">` : "";
     const times = sleep
       ? `

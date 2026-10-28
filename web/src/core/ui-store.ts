@@ -7,6 +7,7 @@ export type SheetName =
   | "feed"
   | "diaper"
   | "sleep"
+  | "mood"
   | "detail"
   | "babies"
   | "add-baby"
@@ -15,7 +16,7 @@ export type SheetName =
   | "join";
 
 /** History screen filter, including the photo gallery. */
-export type HistoryFilter = "all" | "feed" | "sleep" | "diaper" | "photo";
+export type HistoryFilter = "all" | "feed" | "sleep" | "diaper" | "mood" | "photo";
 
 /** Roles a user can be invited as. */
 export type InviteRole = "co_parent" | "caregiver";
@@ -155,5 +156,5 @@ export const LL = {
 } as const;
 
 export type OpenEntryDetail = { id: string };
-export type TilePressDetail = { kind: "feed" | "sleep" | "diaper" };
+export type TilePressDetail = { kind: "feed" | "sleep" | "diaper" | "mood" };
 export type DayChangeDetail = { delta: number };

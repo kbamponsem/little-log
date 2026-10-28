@@ -18,6 +18,7 @@ import "./screens/ll-settings";
 import "./sheets/ll-feed-sheet";
 import "./sheets/ll-diaper-sheet";
 import "./sheets/ll-sleep-sheet";
+import "./sheets/ll-mood-sheet";
 import "./sheets/ll-detail-sheet";
 import "./sheets/ll-babies-sheet";
 import "./sheets/ll-add-baby-sheet";
@@ -223,10 +224,25 @@ export class LlApp extends LLComponent {
 
   /* ---------------------------------------------------- pull to refresh */
 
+  /**
+   * The screen that is on show. Since the shell became one viewport-sized box,
+   * the document no longer scrolls: this element does, so pull-to-refresh has
+   * to ask it rather than the window.
+   */
+  private scroller(): HTMLElement | null {
+    return this.querySelector<HTMLElement>(
+      "ll-today:not([hidden]), ll-history:not([hidden]), ll-trends:not([hidden]), ll-baby:not([hidden]), ll-settings:not([hidden]), ll-welcome:not([hidden])",
+    );
+  }
+
+  private scrolled(): boolean {
+    return (this.scroller()?.scrollTop ?? 0) > 0;
+  }
+
   /** A pull is only meaningful at the top, with nothing open and nothing typed. */
   private canPull(event: TouchEvent): boolean {
     if (this.ptrRefreshing || ui.sheet) return false;
-    if (window.scrollY > 0) return false;
+    if (this.scrolled()) return false;
     const active = document.activeElement;
     if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return false;
     const target = event.target as HTMLElement;
@@ -248,7 +264,7 @@ export class LlApp extends LLComponent {
       this.setPtr(0);
       return;
     }
-    if (window.scrollY > 0) {
+    if (this.scrolled()) {
       this.ptrPulling = false;
       this.setPtr(0);
       return;

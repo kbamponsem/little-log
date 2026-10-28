@@ -2,7 +2,7 @@ import { v7 as uuidv7 } from "uuid";
 
 /* ------------------------------------------------------------ value types */
 
-export type EntryKind = "feed" | "sleep" | "diaper";
+export type EntryKind = "feed" | "sleep" | "diaper" | "mood";
 export type FeedKind = "breast_left" | "breast_right" | "bottle" | "solids";
 export type DiaperType = "pee" | "poop" | "both";
 export type PeeShade = "pale" | "normal" | "dark";
@@ -18,8 +18,19 @@ export type PoopColor =
 export type Consistency = "liquid" | "runny" | "soft" | "pasty" | "firm" | "hard";
 export type SleepLocation = "crib" | "arms" | "stroller" | "car" | "parents_bed";
 export type WakeMood = "calm" | "fussy" | "cried";
+/** How the baby felt overall across a day. */
+export type Mood = "happy" | "content" | "fussy" | "unwell" | "hard_day";
 export type Role = "owner" | "co_parent" | "caregiver";
 export type Theme = "auto" | "light" | "dark";
+
+/** This device's daily mood check-in reminder. Local, never replicated. */
+export interface MoodSchedule {
+  enabled: boolean;
+  /** Minutes after local midnight (0–1439). */
+  minute: number;
+}
+
+export const DEFAULT_MOOD_SCHEDULE: MoodSchedule = { enabled: false, minute: 19 * 60 };
 /** Where a device's request to join a child's log has got to. */
 export type JoinState = "pending" | "accepted" | "declined";
 export type AmountUnit = "ml" | "min";
@@ -47,6 +58,8 @@ export interface Entry {
   poop_amount: Amount | null;
   sleep_location: SleepLocation | null;
   wake_mood: WakeMood | null;
+  /** How the baby felt overall, for a `mood` entry. */
+  mood: Mood | null;
   note: string | null;
   /** File name of the photo on disk, e.g. "<entryId>.jpg". */
   photo: string | null;
@@ -193,6 +206,14 @@ export const WAKE_MOODS: Labeled<WakeMood>[] = [
   { id: "cried", label: "Cried" },
 ];
 
+export const MOODS: ChoiceOption<Mood>[] = [
+  { id: "happy", label: "Happy", icon: "laugh" },
+  { id: "content", label: "Content", icon: "smile" },
+  { id: "fussy", label: "Fussy", icon: "annoyed" },
+  { id: "unwell", label: "Unwell", icon: "thermometer" },
+  { id: "hard_day", label: "Hard day", icon: "frown" },
+];
+
 export const THEMES: Labeled<Theme>[] = [
   { id: "auto", label: "Auto" },
   { id: "light", label: "Light" },
@@ -247,6 +268,7 @@ export function newEntry(fields: NewEntry): Entry {
     poop_amount: null,
     sleep_location: null,
     wake_mood: null,
+    mood: null,
     note: null,
     photo: null,
     caregiver_id: null,

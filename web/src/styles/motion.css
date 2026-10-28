@@ -1,0 +1,197 @@
+/* Little Log — motion.
+   Imported after the components (see main.ts), so it layers on top of their
+   stylesheets. Nothing here changes how anything looks at rest: it only
+   changes how a control answers a touch and how a view arrives. */
+
+/* ------------------------------------------------------------- pressing */
+
+/* The WebView's own tap highlight is off globally (base.css) and several
+   controls had no press state at all, so a tap could pass with no feedback
+   until the next view painted. Every tappable surface now answers the same
+   way: a 2% squeeze, plus Material's ripple (`core/ripple.ts`) — a circle of
+   the element's own text colour, expanding from the touch point, so it reads
+   on light and dark fills alike. `overflow: hidden` keeps that circle inside
+   the control's radius.
+   `touch-action: manipulation` also drops the double-tap-zoom delay.
+
+   `.chip` is written as `button.chip` because Trends renders its legend as
+   `<span class="chip">`: those should read, not react. */
+
+.go,
+.del,
+.link,
+button.chip,
+.tab,
+.row,
+.x,
+.cog,
+.back,
+.step-btn,
+.baby,
+.add-baby,
+.ph,
+.tile {
+  position: relative;
+  overflow: hidden;
+  touch-action: manipulation;
+}
+
+.go,
+.del,
+.link,
+button.chip,
+.tab,
+.row,
+.x,
+.cog,
+.back,
+.step-btn,
+.baby,
+.add-baby,
+.ph {
+  transition:
+    transform var(--dur-press) var(--ease-standard),
+    background-color var(--dur-quick) var(--ease-standard),
+    opacity var(--dur-quick) var(--ease-standard);
+}
+
+/* The ripple is a plain span the press handler drops into the button: a circle
+   of `currentColor` that grows out of the touch point and fades as it goes.
+   Timings follow M3's expand-then-fade: most of the growth is done inside the
+   first half, the rest is the fade. */
+.ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0);
+  animation: ripple 400ms var(--ease-standard) forwards;
+}
+
+@keyframes ripple {
+  0% {
+    transform: scale(0);
+    opacity: 0.14;
+  }
+  55% {
+    transform: scale(1);
+    opacity: 0.1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+
+.go:active,
+.del:active,
+.link:active,
+button.chip:active,
+.tab:active,
+.row:active,
+.x:active,
+.cog:active,
+.back:active,
+.step-btn:active,
+.baby:active,
+.add-baby:active,
+.ph:active {
+  transform: scale(0.975);
+}
+
+/* Text-only controls have no radius of their own for the ripple to stop at.
+   `.x` uses the same radius as its focus ring. */
+.del,
+.link {
+  border-radius: 18px;
+}
+
+.x {
+  border-radius: 14px;
+}
+
+/* ------------------------------------------------------------- arriving */
+
+/* Screens are swapped with the `hidden` attribute, which cannot transition,
+   so the incoming view used to cut in. It now fades up instead: the animation
+   replays every time the element is shown, which is exactly when it is wanted
+   — a tab switch, or Settings opening and closing. */
+ll-today,
+ll-history,
+ll-trends,
+ll-baby,
+ll-settings,
+ll-welcome {
+  animation: screen-in var(--dur-quick) var(--ease-emphasized);
+}
+
+@keyframes screen-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* Toasts are new nodes every time, so this runs once, on arrival. */
+.toast {
+  animation: toast-in var(--dur-sheet) var(--ease-emphasized);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.96);
+  }
+}
+
+/* Motion that is only decoration stops; presses and colours stay, because
+   those are feedback rather than movement. */
+@media (prefers-reduced-motion: reduce) {
+  ll-today,
+  ll-history,
+  ll-trends,
+  ll-baby,
+  ll-settings,
+  ll-welcome,
+  .toast {
+    animation: none;
+  }
+
+  .tab-body::before,
+  .tab-icon,
+  .tab-label {
+    transition: none;
+  }
+
+  /* The ripple becomes a plain tint that fades out: feedback without motion. */
+  .ripple {
+    animation: ripple-tint 200ms var(--ease-standard) forwards;
+  }
+
+  @keyframes ripple-tint {
+    from {
+      transform: scale(1);
+      opacity: 0.12;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+
+  .go,
+  .del,
+  .link,
+  button.chip,
+  .tab,
+  .row,
+  .x,
+  .cog,
+  .back,
+  .step-btn,
+  .baby,
+  .add-baby,
+  .ph {
+    transition: none;
+  }
+}

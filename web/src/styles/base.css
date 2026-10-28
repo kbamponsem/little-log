@@ -7,21 +7,32 @@
 }
 
 html {
+  height: 100%;
+  height: 100dvh;
+  overflow: hidden;
   scroll-padding-top: env(safe-area-inset-top, 0px);
 }
 
 body {
   margin: 0;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
   background: var(--bg);
   color: var(--ink);
   font-family: var(--body);
   font-size: 17px;
-  min-height: 100vh;
-  min-height: 100dvh;
 }
 
+/* The app is one viewport-sized shell. The document itself never scrolls, so
+   the tab bar and the sheets stay put and nothing can grow into a long page:
+   each screen is its own scroller inside this box. */
 ll-app {
+  position: relative;
   display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 /* Screens: one column, capped at --content, always clear of the tab bar. */
@@ -32,10 +43,17 @@ ll-trends,
 ll-baby,
 ll-welcome,
 ll-settings {
+  position: absolute;
+  inset: 0;
   display: block;
   max-width: var(--content);
   margin: 0 auto;
-  padding: 18px var(--gutter) var(--tabbar-room);
+  /* No top padding: a screen starts at the top of the shell, and the shell
+     already clears the status bar. */
+  padding: 0 var(--gutter) var(--tabbar-room);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Reading-width forms and lists look stretched at 1040px, so the settings

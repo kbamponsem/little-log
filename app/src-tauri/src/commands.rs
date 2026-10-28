@@ -6,7 +6,7 @@
 //! can show.
 
 use base64::Engine;
-use little_log_core::model::{Baby, Caregiver, Entry, JoinState, Role, Theme};
+use little_log_core::model::{Baby, Caregiver, Entry, JoinState, MoodSchedule, Role, Theme};
 use little_log_core::repo::JoinRequest;
 use little_log_core::{csv, invite, photo, validate, CoreError};
 use serde::Serialize;
@@ -61,6 +61,20 @@ pub fn device_theme(state: State<'_, AppState>) -> CmdResult<Theme> {
 #[tauri::command]
 pub fn save_device_theme(state: State<'_, AppState>, theme: Theme) -> CmdResult<()> {
     state.repo().save_device_theme(theme).map_err(fail)
+}
+
+/// This device's daily mood check-in reminder. Local; never replicated.
+#[tauri::command]
+pub fn device_mood_schedule(state: State<'_, AppState>) -> CmdResult<MoodSchedule> {
+    state.repo().mood_schedule().map_err(fail)
+}
+
+#[tauri::command]
+pub fn save_device_mood_schedule(
+    state: State<'_, AppState>,
+    schedule: MoodSchedule,
+) -> CmdResult<()> {
+    state.repo().save_device_mood_schedule(&schedule).map_err(fail)
 }
 
 /* ---------------------------------------------------------------- entries */

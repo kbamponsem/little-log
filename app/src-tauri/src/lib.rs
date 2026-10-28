@@ -206,6 +206,8 @@ pub fn run() {
             commands::device_identity,
             commands::device_theme,
             commands::save_device_theme,
+            commands::device_mood_schedule,
+            commands::save_device_mood_schedule,
             commands::list_entries,
             commands::save_entry,
             commands::delete_entry,

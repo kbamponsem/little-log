@@ -14,16 +14,16 @@ use crate::crypto::{DeviceKey, GroupKey};
 use crate::error::{CoreError, Result};
 use crate::keystore::{self, SqliteKeyStore};
 use crate::log::EventLog;
-use crate::model::{Baby, Caregiver, Entry, JoinState, Millis, Role, Theme};
+use crate::model::{Baby, Caregiver, Entry, JoinState, Millis, MoodSchedule, Role, Theme};
 use crate::sync::{self, Cursor};
 use crate::validate::now_millis;
 
 /// Bumped whenever the schema below changes; see [`Repo::migrate`].
-pub const SCHEMA_VERSION: i64 = 10;
+pub const SCHEMA_VERSION: i64 = 11;
 
 const ENTRY_COLUMNS: &str = "id, baby_id, kind, occurred_at, ended_at, feed_kind, amount, \
      amount_unit, diaper_type, pee_shade, pee_amount, poop_color, consistency, poop_amount, \
-     sleep_location, wake_mood, note, photo, caregiver_id, created_at, updated_at, deleted";
+     sleep_location, wake_mood, note, photo, caregiver_id, created_at, updated_at, deleted, mood";
 
 const SCHEMA_V1: &str = r#"
 CREATE TABLE IF NOT EXISTS babies (
@@ -219,6 +219,16 @@ const SCHEMA_V10: &str = r#"
 ALTER TABLE babies ADD COLUMN photo TEXT;
 "#;
 
+/// Daily mood check-ins: the entry's value, and this device's reminder setting.
+///
+/// The schedule lives in `device_settings` because it is a local preference, not
+/// something one phone gets to set for the rest of the household.
+const SCHEMA_V11: &str = r#"
+ALTER TABLE entries ADD COLUMN mood TEXT;
+ALTER TABLE device_settings ADD COLUMN mood_schedule_enabled INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE device_settings ADD COLUMN mood_schedule_minute INTEGER NOT NULL DEFAULT 1140;
+"#;
+
 /// An invite link waiting to be redeemed.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Invite {
@@ -332,6 +342,9 @@ impl Repo {
         }
         if version < 10 {
             self.conn.execute_batch(SCHEMA_V10)?;
+        }
+        if version < 11 {
+            self.conn.execute_batch(SCHEMA_V11)?;
         }
         if version < SCHEMA_VERSION {
             self.conn
@@ -673,6 +686,36 @@ impl Repo {
         Ok(())
     }
 
+    /// This device's daily mood check-in reminder. Local; never replicated.
+    pub fn mood_schedule(&self) -> Result<MoodSchedule> {
+        let (enabled, minute): (i64, i64) = self.conn.query_row(
+            "SELECT mood_schedule_enabled, mood_schedule_minute
+               FROM device_settings WHERE id = 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        Ok(MoodSchedule {
+            enabled: enabled != 0,
+            minute: minute as i32,
+        })
+    }
+
+    /// Set this device's daily mood check-in reminder.
+    pub fn save_device_mood_schedule(&self, schedule: &MoodSchedule) -> Result<()> {
+        if !(0..1440).contains(&schedule.minute) {
+            return Err(CoreError::invalid(
+                "the mood check-in time must be within a day",
+            ));
+        }
+        self.conn.execute(
+            "UPDATE device_settings
+                SET mood_schedule_enabled = ?1, mood_schedule_minute = ?2
+              WHERE id = 1",
+            params![i64::from(schedule.enabled), i64::from(schedule.minute)],
+        )?;
+        Ok(())
+    }
+
     /* --------------------------------------------------------------- entries */
 
     /// Every live entry, newest first (what the screens render).
@@ -829,8 +872,8 @@ impl Repo {
         self.conn.execute(
             "INSERT INTO entries (id, baby_id, kind, occurred_at, ended_at, feed_kind, amount,
                 amount_unit, diaper_type, pee_shade, pee_amount, poop_color, consistency, poop_amount,
-                sleep_location, wake_mood, note, photo, caregiver_id, created_at, updated_at, deleted)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)
+                sleep_location, wake_mood, note, photo, caregiver_id, created_at, updated_at, deleted, mood)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)
              ON CONFLICT(id) DO UPDATE SET
                 baby_id = excluded.baby_id,
                 kind = excluded.kind,
@@ -854,7 +897,8 @@ impl Repo {
                 -- arrival of an older event has to be able to move it back.
                 created_at = excluded.created_at,
                 updated_at = excluded.updated_at,
-                deleted = excluded.deleted",
+                deleted = excluded.deleted,
+                mood = excluded.mood",
             params![
                 entry.id,
                 entry.baby_id,
@@ -878,6 +922,7 @@ impl Repo {
                 entry.created_at,
                 entry.updated_at,
                 i64::from(entry.deleted),
+                entry.mood.map(|m| m.as_str()),
             ],
         )?;
         Ok(())
@@ -1256,6 +1301,7 @@ fn entry_from_row(row: &Row<'_>) -> rusqlite::Result<Entry> {
         created_at: row.get(19)?,
         updated_at: row.get(20)?,
         deleted: row.get::<_, i64>(21)? != 0,
+        mood: parse_opt(row.get(22)?, 22)?,
     })
 }
 

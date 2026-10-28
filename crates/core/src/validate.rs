@@ -53,6 +53,7 @@ pub fn validate_entry(entry: &Entry, now: Millis) -> Result<()> {
         EntryKind::Feed => validate_feed(entry),
         EntryKind::Sleep => validate_sleep(entry),
         EntryKind::Diaper => validate_diaper(entry),
+        EntryKind::Mood => validate_mood(entry),
     }
 }
 
@@ -156,6 +157,16 @@ fn validate_diaper(entry: &Entry) -> Result<()> {
     Ok(())
 }
 
+fn validate_mood(entry: &Entry) -> Result<()> {
+    if entry.mood.is_none() {
+        return Err(CoreError::invalid("a mood entry needs a mood"));
+    }
+    if entry.ended_at.is_some() {
+        return Err(CoreError::invalid("a mood entry cannot have an end time"));
+    }
+    Ok(())
+}
+
 /// Roles and themes arrive from the UI as strings; reject anything unknown.
 pub fn parse_role(value: &str) -> Result<Role> {
     Role::parse(value)
@@ -250,6 +261,18 @@ mod tests {
         entry.poop_amount = Some(Amount::Small);
         entry.sleep_location = Some(SleepLocation::Crib); // ignored, not rejected
         assert!(validate_now(&entry).is_ok());
+    }
+
+    #[test]
+    fn a_mood_entry_needs_a_mood_and_no_end_time() {
+        let mut entry = Entry::new(EntryKind::Mood, now_millis());
+        assert!(validate_now(&entry).is_err());
+
+        entry.mood = Some(crate::model::Mood::Happy);
+        assert!(validate_now(&entry).is_ok());
+
+        entry.ended_at = Some(now_millis());
+        assert!(validate_now(&entry).is_err());
     }
 
     #[test]

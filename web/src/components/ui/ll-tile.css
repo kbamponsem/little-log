@@ -55,12 +55,16 @@ ll-tile {
   background: var(--diaper);
 }
 
+.mood {
+  background: var(--mood);
+}
+
 /* A running sleep pulses gently. */
 .sleep.run {
   animation: pulse 2.4s ease-in-out infinite;
 }
 
-/* Three-up on tablet and desktop: trim the tile so the row stays compact. */
+/* Tablet and up: trim the tile so a row of actions stays compact. */
 @media (min-width: 700px) {
   .tile {
     min-height: 120px;

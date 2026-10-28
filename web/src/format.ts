@@ -5,6 +5,7 @@ import {
   FEED_KINDS,
   PEE_SHADES,
   POOP_COLORS,
+  MOODS,
   SLEEP_LOCATIONS,
   WAKE_MOODS,
   labelOf,
@@ -87,6 +88,7 @@ export function sleepMs(entry: Entry, now: number = Date.now()): number {
 export function entryTitle(entry: Entry): string {
   if (entry.kind === "sleep") return `Slept ${dur(sleepMs(entry))}`;
   if (entry.kind === "feed") return labelOf(FEED_KINDS, entry.feed_kind);
+  if (entry.kind === "mood") return labelOf(MOODS, entry.mood);
   return labelOf(DIAPER_TYPES, entry.diaper_type);
 }
 
@@ -101,6 +103,7 @@ export function entryDetail(entry: Entry): string {
   if (entry.kind === "feed") {
     return entry.amount ? `${entry.amount} ${entry.amount_unit}` : "";
   }
+  if (entry.kind === "mood") return "";
   const parts: string[] = [];
   if (entry.diaper_type !== "poop") {
     const pee = [labelOf(PEE_SHADES, entry.pee_shade), labelOf(AMOUNTS, entry.pee_amount)]
@@ -125,6 +128,7 @@ export function entryDetail(entry: Entry): string {
 export function entryWhat(entry: Entry): string {
   if (entry.kind === "sleep") return "Sleep";
   if (entry.kind === "feed") return labelOf(FEED_KINDS, entry.feed_kind);
+  if (entry.kind === "mood") return labelOf(MOODS, entry.mood);
   return labelOf(DIAPER_TYPES, entry.diaper_type);
 }
 

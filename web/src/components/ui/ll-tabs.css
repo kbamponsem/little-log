@@ -1,31 +1,64 @@
-/* <ll-tabs> — the fixed bottom tab bar.
-   The host is the flex container and carries all the bar chrome; the buttons
-   it renders are `.tab`. */
+/* <ll-tabs> — the floating navigation bar.
+   A Material 3 Expressive navigation bar in the shape of the floating toolbar:
+   a pill detached from the window edges, full corners, lifted above the
+   content it floats over. It is 56dp tall and only as wide as its four
+   destinations need, so it reads as a floating control rather than a docked bar.
+
+   Items follow the M3 "horizontal" configuration: at rest a destination is its
+   icon alone; selecting one grows a pill out from behind the icon and reveals
+   the label beside it, so icon and text sit side by side inside the indicator.
+   The indicator is 40dp tall and hugs the icon, the 4dp gap and the label.
+
+   The colours are the app's own — dynamic colour needs the platform bridge,
+   which this build does not have yet — so the indicator is the tonal `--chip`
+   used elsewhere instead of `secondary-container`. */
 
 ll-tabs {
-  position: fixed;
+  /* Tab geometry. The bar's height follows the tab, and the inset is the
+     space the tab body keeps from the edge on every side, so the selected
+     pill never touches it. */
+  --tab-body-height: 40px;
+  --tab-border: 2px;
+  --tab-inset: 8px;
+  --tab-height: calc(var(--tab-body-height) + 2 * var(--tab-inset));
+
+  position: absolute;
   left: 0;
   right: 0;
-  bottom: 0;
+  bottom: 16px;
   z-index: 10;
   display: flex;
-  gap: 6px;
-  max-width: 560px;
+  gap: 4px;
+  /* As wide as its destinations need, centred — not the full window. */
+  width: fit-content;
   margin: 0 auto;
-  padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
+  /* M3's floating toolbar keeps 8dp of space inside each end. */
+  padding: 0 4px;
+  /* Clip the items' press layers to the pill's curve. */
+  overflow: hidden;
   background: var(--paper);
-  border-radius: 28px 28px 0 0;
+  border: var(--tab-border) solid var(--chip);
+  border-radius: 999px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
 }
 
 .tab {
   all: unset;
   box-sizing: border-box;
-  flex: 1;
-  min-height: 56px;
-  padding: 8px 0;
-  border-radius: 20px;
-  font-weight: 600;
-  font-size: 13px;
+  /* Equal widths, sized for the longest label, so the bar does not resize as
+     the selection moves. */
+  flex: none;
+  min-width: 56px;
+  height: var(--tab-height);
+  padding: var(--tab-inset);
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  line-height: 14px;
   text-align: center;
   cursor: pointer;
   /* Holding the Baby tab is a gesture, so the webview must not answer it with
@@ -36,30 +69,76 @@ ll-tabs {
   touch-action: manipulation;
 }
 
-.tab span {
+/* Icon and label, and the pill that grows behind them. */
+.tab-body {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: var(--tab-body-height);
+  /* Leading and trailing space inside the pill; symmetric, so an icon with no
+     label stays centred. */
+  padding: 0 5px;
+  border-radius: 999px;
+}
+
+.tab-body::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--chip);
+  opacity: 0;
+  transition: opacity var(--dur-quick) var(--ease-standard);
+}
+
+.tab[aria-current="page"] .tab-body::before {
+  opacity: 1;
+}
+
+.tab-icon {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  opacity: 0.7;
+  transition: opacity var(--dur-quick) var(--ease-standard);
+}
+
+/* The app's icons draw to the edge of their 24 box, where Material's own glyphs
+   leave a little air inside it; 20 keeps the same optical weight. */
+.tab-icon .ic {
   display: block;
-  font-size: 24px;
+  width: 20px;
+  height: 20px;
 }
 
-.tab .ic {
-  display: block;
-  margin: 0 auto 2px;
+/* At rest the label is collapsed to nothing, so the item is just its icon.
+   Selecting it opens the label to its natural width and the pill grows with
+   it — the body is centred, so it opens outwards from the icon. */
+.tab-label {
+  max-width: 0;
+  margin-left: 0;
+  overflow: hidden;
+  opacity: 0;
+  white-space: nowrap;
+  transition:
+    max-width var(--dur-sheet) var(--ease-emphasized),
+    margin-left var(--dur-sheet) var(--ease-emphasized),
+    opacity var(--dur-quick) var(--ease-standard);
 }
 
-.tab[aria-current="page"] {
-  background: var(--ink);
-  color: var(--paper);
+.tab[aria-current="page"] .tab-icon {
+  opacity: 1;
 }
 
-/* Tablet and up: the bar stays a compact, centred pill rather than stretching
-   the full width of a desktop screen. */
-@media (min-width: 700px) {
-  ll-tabs {
-    gap: 10px;
-    padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
-  }
+.tab[aria-current="page"] .tab-label {
+  max-width: 64px;
+  margin-left: 4px;
+  opacity: 1;
+}
 
-  .tab {
-    min-height: 60px;
-  }
+/* The selected icon is drawn heavier, standing in for M3's filled icon — this
+   set has no filled variants. */
+.tab[aria-current="page"] .tab-icon .ic {
+  stroke-width: 2.5;
 }

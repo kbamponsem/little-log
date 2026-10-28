@@ -28,7 +28,7 @@ pub use error::{CoreError, Result};
 pub use event::Event;
 pub use keystore::{device_key, KeyStore};
 pub use log::EventLog;
-pub use model::{Baby, Caregiver, Entry, EntryKind, JoinState, Role, Theme};
+pub use model::{Baby, Caregiver, Entry, EntryKind, JoinState, MoodSchedule, Role, Theme};
 pub use payload::EntryPayload;
 pub use pending::{DrainReport, PendingAction, WidgetAction, WidgetState};
 pub use repo::Repo;

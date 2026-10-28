@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{CoreError, Result};
 use crate::model::{
-    Amount, AmountUnit, Baby, Consistency, DiaperType, Entry, EntryKind, FeedKind, Millis,
+    Amount, AmountUnit, Baby, Consistency, DiaperType, Entry, EntryKind, FeedKind, Millis, Mood,
     PeeShade, PoopColor, SleepLocation, WakeMood,
 };
 
@@ -64,6 +64,8 @@ pub struct EntryPayload {
     #[serde(default)]
     pub wake_mood: Option<WakeMood>,
     #[serde(default)]
+    pub mood: Option<Mood>,
+    #[serde(default)]
     pub note: Option<String>,
     #[serde(default)]
     pub photo: Option<String>,
@@ -94,6 +96,7 @@ impl EntryPayload {
             poop_amount: entry.poop_amount,
             sleep_location: entry.sleep_location,
             wake_mood: entry.wake_mood,
+            mood: entry.mood,
             note: entry.note.clone(),
             photo: entry.photo.clone(),
             photo_data: None,
@@ -190,6 +193,18 @@ mod entry_tests {
         assert_eq!(decoded, payload);
         assert_eq!(decoded.amount, Some(120));
         assert_eq!(decoded.note.as_deref(), Some("took it all"));
+    }
+
+    #[test]
+    fn a_mood_payload_round_trips() {
+        let mut source = Entry::new(EntryKind::Mood, 1_700_000_000_000);
+        source.mood = Some(Mood::Content);
+
+        let payload = EntryPayload::of(&source);
+        let decoded = EntryPayload::from_bytes(&payload.to_bytes().unwrap()).unwrap();
+
+        assert_eq!(decoded.kind, EntryKind::Mood);
+        assert_eq!(decoded.mood, Some(Mood::Content));
     }
 
     #[test]

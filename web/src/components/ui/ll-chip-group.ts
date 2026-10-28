@@ -5,7 +5,7 @@ import { esc } from "../../format";
 import type { LlChip } from "./ll-chip";
 import "./ll-chip-group.css";
 
-export type ChipVariant = "plain" | "big" | "card";
+export type ChipVariant = "plain" | "big" | "card" | "mood";
 
 export interface ChipGroupConfig {
   options: readonly ChoiceOption[];
@@ -41,7 +41,7 @@ export class LlChipGroup extends LLComponent {
   }
 
   protected template(): string {
-    const layout = this.variant === "card" ? "cards" : "chips";
+    const layout = this.variant === "card" || this.variant === "mood" ? "cards" : "chips";
     const chips = this.options.map((option) => this.markup(option)).join("");
     return `<div class="${layout}" role="group">${chips}</div>`;
   }
