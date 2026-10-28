@@ -16,3 +16,9 @@ ll-field {
   font-size: 18px;
   resize: none;
 }
+
+/* Keep hints legible in both themes; the browser default is too grey. */
+.inp::placeholder {
+  color: var(--ink);
+  opacity: 0.7;
+}

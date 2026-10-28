@@ -97,6 +97,7 @@ pub fn resolve(events: &[Event], group: &GroupKey) -> Result<Option<Entry>> {
         poop_amount: payload.poop_amount,
         sleep_location: payload.sleep_location,
         wake_mood: payload.wake_mood,
+        mood: payload.mood,
         note: payload.note,
         photo: payload.photo,
         caregiver_id: Some(winner.author.clone()),
@@ -421,7 +422,7 @@ mod tests {
                     "SELECT id, baby_id, kind, occurred_at, ended_at, feed_kind, amount, amount_unit,
                             diaper_type, pee_shade, pee_amount, poop_color, consistency, poop_amount,
                             sleep_location, wake_mood, note, photo, caregiver_id, created_at,
-                            updated_at, deleted
+                            updated_at, deleted, mood
                        FROM entries WHERE id = ?1",
                     rusqlite::params![entry_id],
                     |row| {
@@ -456,6 +457,7 @@ mod tests {
                             created_at: row.get(19)?,
                             updated_at: row.get(20)?,
                             deleted: row.get::<_, i64>(21)? != 0,
+                            mood: row.get::<_, Option<String>>(22)?.map(|v| v.parse().unwrap()),
                         })
                     },
                 )

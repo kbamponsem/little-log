@@ -10,10 +10,14 @@ import "./styles/index.css";
 import "./components/ui";
 // …then the app shell, which owns the screens, tabs and sheets.
 import "./components/ll-app";
+// …and the motion layer last, so its press and arrival rules sit on top of
+// the component stylesheets rather than being overridden by them.
+import "./styles/motion.css";
 
 import { ui } from "./core/ui-store";
 import type { SheetName } from "./core/ui-store";
 import { store } from "./data/store";
+import { installRipple } from "./core/ripple";
 
 /**
  * Which sheet each widget action opens.
@@ -71,5 +75,9 @@ document.addEventListener("visibilitychange", () => {
   void store.refresh();
   void openWidgetSheet();
 });
+
+/* One press handler for the whole app: every control is a <button>, so the
+ * ripple is installed once here rather than in each component. */
+installRipple();
 
 void boot();

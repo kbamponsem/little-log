@@ -1,4 +1,4 @@
-import type { Baby, Caregiver, Entry, JoinProgress, JoinRequest, Role, SyncStatus, Theme } from "./model";
+import type { Baby, Caregiver, Entry, JoinProgress, JoinRequest, MoodSchedule, Role, SyncStatus, Theme } from "./model";
 import type { StorageAdapter } from "./storage";
 
 /**
@@ -20,6 +20,15 @@ export class Repository {
 
   saveTheme(theme: Theme): Promise<void> {
     return this.adapter.saveTheme(theme);
+  }
+
+  /** This device's daily mood check-in reminder. */
+  moodSchedule(): Promise<MoodSchedule> {
+    return this.adapter.moodSchedule();
+  }
+
+  saveMoodSchedule(schedule: MoodSchedule): Promise<void> {
+    return this.adapter.saveMoodSchedule(schedule);
   }
 
   /* entries */

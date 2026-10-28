@@ -1,7 +1,7 @@
 import { Observable } from "../core/observable";
 import { isToday } from "../format";
-import type { Baby, Entry, EntryKind, NewEntry, Theme } from "./model";
-import { newEntry } from "./model";
+import type { Baby, Entry, EntryKind, MoodSchedule, NewEntry, Theme } from "./model";
+import { DEFAULT_MOOD_SCHEDULE, newEntry } from "./model";
 import { Repository } from "./repository";
 import { storage } from "./storage";
 
@@ -25,6 +25,8 @@ export class AppStore extends Observable<AppStore> {
   deviceId: string | null = null;
   /** Appearance is a device preference, so it lives here and not on a baby. */
   theme: Theme = "dark";
+  /** When this device should prompt for a daily mood check-in. */
+  moodSchedule: MoodSchedule = { ...DEFAULT_MOOD_SCHEDULE };
 
   constructor(readonly repo: Repository) {
     super();
@@ -55,6 +57,7 @@ export class AppStore extends Observable<AppStore> {
   async load(): Promise<void> {
     this.deviceId = await this.repo.identity();
     this.theme = await this.repo.theme();
+    this.moodSchedule = await this.repo.moodSchedule();
     this.babies = await this.repo.babies();
     const current = await this.repo.currentBaby();
     this.currentBabyId = current?.id ?? this.babies[0]?.id ?? null;
@@ -158,6 +161,13 @@ export class AppStore extends Observable<AppStore> {
     await this.repo.saveTheme(theme);
   }
 
+  /** Set this device's daily check-in reminder. Local only. */
+  async saveMoodSchedule(schedule: MoodSchedule): Promise<void> {
+    this.moodSchedule = schedule;
+    this.notify();
+    await this.repo.saveMoodSchedule(schedule);
+  }
+
   async deleteAll(): Promise<void> {
     await this.repo.deleteAll();
     this.entries = [];
@@ -193,6 +203,21 @@ export class AppStore extends Observable<AppStore> {
         .filter((entry) => entry.kind === "sleep")
         .reduce((total, entry) => total + ((entry.ended_at ?? now) - entry.occurred_at), 0),
     };
+  }
+
+  /**
+   * Whether the daily mood check-in should be showing now.
+   *
+   * Only after the scheduled local time, and only until a mood has been logged
+   * for today — any caregiver's entry counts, because the question is about the
+   * baby rather than about this phone.
+   */
+  moodDue(now: number = Date.now()): boolean {
+    if (!this.moodSchedule.enabled) return false;
+    const due = new Date(now);
+    due.setHours(Math.floor(this.moodSchedule.minute / 60), this.moodSchedule.minute % 60, 0, 0);
+    if (now < due.getTime()) return false;
+    return !this.today().some((entry) => entry.kind === "mood");
   }
 }
 

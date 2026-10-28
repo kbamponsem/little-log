@@ -38,6 +38,7 @@ export class LlEntryRow extends LLComponent {
   private icon(entry: Entry): string {
     if (entry.kind === "feed") return ic("milk", 26);
     if (entry.kind === "sleep") return ic("moon", 26);
+    if (entry.kind === "mood") return ic("heart", 26);
     return entry.diaper_type === "pee" ? ic("droplet", 26) : ic("poop", 26);
   }
 }

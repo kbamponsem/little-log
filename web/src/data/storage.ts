@@ -5,6 +5,7 @@ import type {
   Entry,
   JoinProgress,
   JoinRequest,
+  MoodSchedule,
   Role,
   SyncStatus,
   Theme,
@@ -25,6 +26,10 @@ export interface StorageAdapter {
   /** This device's appearance preference. Local; never replicated. */
   theme(): Promise<Theme>;
   saveTheme(theme: Theme): Promise<void>;
+
+  /** This device's daily mood check-in reminder. Local; never replicated. */
+  moodSchedule(): Promise<MoodSchedule>;
+  saveMoodSchedule(schedule: MoodSchedule): Promise<void>;
 
   listEntries(): Promise<Entry[]>;
   saveEntry(entry: Entry): Promise<Entry>;
@@ -104,6 +109,14 @@ export class TauriAdapter implements StorageAdapter {
 
   saveTheme(theme: Theme): Promise<void> {
     return this.call<void>("save_device_theme", { theme });
+  }
+
+  moodSchedule(): Promise<MoodSchedule> {
+    return this.call<MoodSchedule>("device_mood_schedule");
+  }
+
+  saveMoodSchedule(schedule: MoodSchedule): Promise<void> {
+    return this.call<void>("save_device_mood_schedule", { schedule });
   }
 
   /* entries */

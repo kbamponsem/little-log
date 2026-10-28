@@ -65,7 +65,8 @@ macro_rules! string_enum {
 string_enum!(EntryKind {
     Feed => "feed", "Feed";
     Sleep => "sleep", "Sleep";
-    Diaper => "diaper", "Diaper"
+    Diaper => "diaper", "Diaper";
+    Mood => "mood", "Mood"
 });
 
 string_enum!(
@@ -143,6 +144,17 @@ string_enum!(WakeMood {
     Cried => "cried", "Cried"
 });
 
+string_enum!(
+    /// How the baby felt overall across a day, logged as a mood check-in.
+    Mood {
+        Happy => "happy", "Happy";
+        Content => "content", "Content";
+        Fussy => "fussy", "Fussy";
+        Unwell => "unwell", "Unwell";
+        HardDay => "hard_day", "Hard day"
+    }
+);
+
 string_enum!(Role {
     Owner => "owner", "Owner";
     CoParent => "co_parent", "Co-parent";
@@ -172,6 +184,26 @@ string_enum!(AmountUnit {
     Milliliters => "ml", "ml";
     Minutes => "min", "min"
 });
+
+/// This device's daily mood check-in reminder.
+///
+/// Never replicated: one phone's reminder time is nobody else's business, the
+/// same reason the theme lives beside it in `device_settings`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MoodSchedule {
+    pub enabled: bool,
+    /// Minutes after local midnight (0–1439).
+    pub minute: i32,
+}
+
+impl Default for MoodSchedule {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            minute: 19 * 60,
+        }
+    }
+}
 
 impl PoopColor {
     /// Colours worth mentioning to a pediatrician.
@@ -226,6 +258,9 @@ pub struct Entry {
     pub sleep_location: Option<SleepLocation>,
     #[serde(default)]
     pub wake_mood: Option<WakeMood>,
+    /// How the baby felt overall during the day, for a `mood` entry.
+    #[serde(default)]
+    pub mood: Option<Mood>,
     #[serde(default)]
     pub note: Option<String>,
     #[serde(default)]
@@ -260,6 +295,7 @@ impl Entry {
             poop_amount: None,
             sleep_location: None,
             wake_mood: None,
+            mood: None,
             note: None,
             photo: None,
             caregiver_id: None,
@@ -294,6 +330,10 @@ impl Entry {
                 .diaper_type
                 .map(|t| t.label().to_string())
                 .unwrap_or_default(),
+            EntryKind::Mood => self
+                .mood
+                .map(|mood| mood.label().to_string())
+                .unwrap_or_default(),
         }
     }
 
@@ -310,6 +350,7 @@ impl Entry {
                 None => String::new(),
             },
             EntryKind::Diaper => self.diaper_details(),
+            EntryKind::Mood => String::new(),
         }
     }
 
@@ -452,6 +493,9 @@ mod tests {
         for role in Role::ALL {
             assert_eq!(Role::parse(role.as_str()).unwrap(), *role);
         }
+        for mood in Mood::ALL {
+            assert_eq!(Mood::parse(mood.as_str()).unwrap(), *mood);
+        }
     }
 
     #[test]
@@ -461,6 +505,7 @@ mod tests {
         assert_eq!(PoopColor::RedStreaked.as_str(), "red_streaked");
         assert_eq!(SleepLocation::ParentsBed.as_str(), "parents_bed");
         assert_eq!(Role::CoParent.as_str(), "co_parent");
+        assert_eq!(Mood::HardDay.as_str(), "hard_day");
     }
 
     #[test]
@@ -530,6 +575,11 @@ mod tests {
             diaper.details(0),
             "Pee: Normal · Medium · Poop: Mustard, Soft"
         );
+
+        let mut mood = Entry::new(EntryKind::Mood, 0);
+        mood.mood = Some(Mood::HardDay);
+        assert_eq!(mood.title(), "Hard day");
+        assert_eq!(mood.details(0), "");
     }
 
     #[test]

@@ -41,6 +41,16 @@ export const IC = {
     '<path d="M5 20h14a2 2 0 0 0 0-4H5a2 2 0 0 0 0 4Z"/><path d="M7 16a2 2 0 0 1 0-4h10a2 2 0 0 1 0 4"/><path d="M9 12c0-3 2-4 3-6 1 1.5 3 3 3 6"/>',
   heart:
     '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
+  smile:
+    '<path d="M15 10V9"/><path d="M16.472 15a6 6 0 01-8.943 0"/><path d="M9 10V9"/><circle cx="12" cy="12" r="10"/>',
+  laugh:
+    '<path d="M15 10V9"/><path d="M7.084 14.302a5.12 5.12 0 009.833 0 .24.24 0 00-.235-.302H7.32a.24.24 0 00-.235.302"/><path d="M9 10V9"/><circle cx="12" cy="12" r="10"/>',
+  annoyed:
+    '<path d="M14 10h2"/><path d="M8 10h2"/><path d="M8 16h8"/><circle cx="12" cy="12" r="10"/>',
+  frown:
+    '<path d="M15 10V9"/><path d="M9 10V9"/><path d="M9 16a5 5 0 016 0"/><circle cx="12" cy="12" r="10"/>',
+  thermometer:
+    '<path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/>',
   utensils:
     '<path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>',
   camera:

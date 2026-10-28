@@ -17,6 +17,7 @@ const FILTERS: ChoiceOption<HistoryFilter>[] = [
   { id: "feed", label: "Feeds", icon: "milk" },
   { id: "sleep", label: "Sleep", icon: "moon" },
   { id: "diaper", label: "Diapers", icon: "droplet" },
+  { id: "mood", label: "Mood", icon: "heart" },
   { id: "photo", label: "Photos", icon: "camera" },
 ];
 

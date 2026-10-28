@@ -24,7 +24,7 @@ export class LlTabs extends LLComponent {
   protected template(): string {
     return TABS.map(
       (tab) =>
-        `<button class="tab" type="button" data-tab="${tab.id}"><span>${ic(tab.icon, 24)}</span>${tab.label}</button>`,
+        `<button class="tab" type="button" data-tab="${tab.id}"><span class="tab-body"><span class="tab-icon">${ic(tab.icon, 24)}</span><span class="tab-label">${tab.label}</span></span></button>`,
     ).join("");
   }
 

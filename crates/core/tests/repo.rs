@@ -1,7 +1,8 @@
 //! Repository behaviour: last-write-wins, tombstones, cursor paging, invites.
 
 use little_log_core::model::{
-    AmountUnit, Baby, Caregiver, DiaperType, Entry, EntryKind, FeedKind, Role, Theme,
+    AmountUnit, Baby, Caregiver, DiaperType, Entry, EntryKind, FeedKind, Mood, MoodSchedule, Role,
+    Theme,
 };
 use little_log_core::sync::Cursor;
 use little_log_core::{validate, Repo};
@@ -60,6 +61,58 @@ fn the_device_theme_is_a_setting_not_part_of_a_baby() {
         "Baby",
         "the baby is untouched"
     );
+}
+
+#[test]
+fn the_mood_schedule_is_a_device_setting() {
+    let repo = Repo::open_in_memory().unwrap();
+
+    assert_eq!(
+        repo.mood_schedule().unwrap(),
+        MoodSchedule {
+            enabled: false,
+            minute: 19 * 60
+        },
+        "a fresh device has the check-in off, at 19:00"
+    );
+
+    repo.save_device_mood_schedule(&MoodSchedule {
+        enabled: true,
+        minute: 8 * 60 + 30,
+    })
+    .unwrap();
+    assert_eq!(
+        repo.mood_schedule().unwrap(),
+        MoodSchedule {
+            enabled: true,
+            minute: 8 * 60 + 30
+        }
+    );
+
+    assert!(repo
+        .save_device_mood_schedule(&MoodSchedule {
+            enabled: true,
+            minute: 1440
+        })
+        .is_err());
+}
+
+#[test]
+fn a_mood_entry_round_trips_through_the_projection() {
+    let repo = Repo::open_in_memory().unwrap();
+    let mut entry = Entry::new(EntryKind::Mood, validate::now_millis());
+    entry.mood = Some(Mood::Content);
+    entry.note = Some("settled after a long morning".into());
+
+    repo.save_entry(&entry).unwrap();
+
+    let stored = repo.entry(&entry.id).unwrap().unwrap();
+    assert_eq!(stored.kind, EntryKind::Mood);
+    assert_eq!(stored.mood, Some(Mood::Content));
+    assert_eq!(stored.title(), "Content");
+
+    let csv = little_log_core::csv::export(&repo.entries().unwrap(), validate::now_millis());
+    assert!(csv.contains("\"mood\",\"Content\",\"\""));
 }
 
 #[test]
@@ -490,7 +543,10 @@ fn upgrading_attaches_orphan_entries_and_points_at_the_child() {
         repo.connection()
             .execute_batch(
                 "ALTER TABLE device_settings DROP COLUMN current_baby_id;
+                 ALTER TABLE device_settings DROP COLUMN mood_schedule_enabled;
+                 ALTER TABLE device_settings DROP COLUMN mood_schedule_minute;
                  ALTER TABLE babies DROP COLUMN photo;
+                 ALTER TABLE entries DROP COLUMN mood;
                  PRAGMA user_version = 5;",
             )
             .unwrap();

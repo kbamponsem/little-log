@@ -2,7 +2,7 @@ import { defineComponent, LLComponent } from "../../core/component";
 import { copyText } from "../../core/clipboard";
 import { ui } from "../../core/ui-store";
 import type { InviteRole } from "../../core/ui-store";
-import type { Caregiver, JoinRequest, SyncPeer, SyncStatus, Theme } from "../../data/model";
+import type { Caregiver, JoinRequest, MoodSchedule, SyncPeer, SyncStatus, Theme } from "../../data/model";
 import { INVITE_ROLES, THEMES } from "../../data/model";
 import { store } from "../../data/store";
 import { ic } from "../../icons";
@@ -72,6 +72,13 @@ export class LlSettings extends LLComponent {
           <p class="note">Sync runs when the app opens and after you log something. A peer is another phone sharing this log.</p>
         </ll-card>
 
+        <ll-card class="card" heading="Daily check-in">
+          <div class="grp">Mood reminder</div>
+          <ll-chip-group data-role="mood-schedule"></ll-chip-group>
+          <ll-field name="mood-time" label="Check in at" type="time" value="${timeValue(store.moodSchedule.minute)}"></ll-field>
+          <p class="note">Shows a check-in card on Today after this time if no mood has been logged yet. This device only.</p>
+        </ll-card>
+
         <ll-card class="card" heading="This device">
           <div class="kv">
             <span class="label">Device ID</span>
@@ -104,6 +111,15 @@ export class LlSettings extends LLComponent {
       value: ui.inviteRole,
       toggle: false,
     });
+    this.querySelector<LlChipGroup>('[data-role="mood-schedule"]')?.configure({
+      options: [
+        { id: "off", label: "Off" },
+        { id: "on", label: "On" },
+      ],
+      value: store.moodSchedule.enabled ? "on" : "off",
+      toggle: false,
+    });
+    this.applyMoodSchedule();
     this.renderDevice();
     this.renderCaregivers();
     this.renderJoins();
@@ -149,6 +165,16 @@ export class LlSettings extends LLComponent {
       const value = (event as CustomEvent<{ value: string | null }>).detail.value;
       if (role === "theme" && value) void store.saveTheme(value as Theme);
       if (role === "invite-role" && value) ui.setInviteRole(value as InviteRole);
+      if (role === "mood-schedule") {
+        void this.saveMoodSchedule({ ...store.moodSchedule, enabled: value === "on" });
+      }
+    });
+
+    this.addEventListener("change", (event) => {
+      const input = event.target as HTMLInputElement;
+      if (input.name !== "mood-time") return;
+      const minute = parseTime(input.value);
+      if (minute !== null) void this.saveMoodSchedule({ ...store.moodSchedule, minute });
     });
   }
 
@@ -156,6 +182,19 @@ export class LlSettings extends LLComponent {
     window.clearInterval(this.joinPoll);
     window.clearInterval(this.syncPoll);
     super.disconnect();
+  }
+
+  private applyMoodSchedule(): void {
+    const input = this.querySelector<HTMLInputElement>('input[name="mood-time"]');
+    if (input) input.disabled = !store.moodSchedule.enabled;
+  }
+
+  private async saveMoodSchedule(schedule: MoodSchedule): Promise<void> {
+    try {
+      await store.saveMoodSchedule(schedule);
+    } catch (error) {
+      ui.toast("error", error instanceof Error ? error.message : String(error));
+    }
   }
 
   /**
@@ -392,6 +431,23 @@ export class LlSettings extends LLComponent {
       }),
     );
   }
+}
+
+/** "19:00" for an `<input type="time">` value, from minutes after midnight. */
+function timeValue(minute: number): string {
+  const hours = String(Math.floor(minute / 60)).padStart(2, "0");
+  const minutes = String(minute % 60).padStart(2, "0");
+  return `${hours}:${minutes}`;
+}
+
+/** Minutes after midnight from "HH:MM", or null when the value is incomplete. */
+function parseTime(value: string): number | null {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(value);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 23 || minutes > 59) return null;
+  return hours * 60 + minutes;
 }
 
 defineComponent("ll-settings", LlSettings);

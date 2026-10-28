@@ -5,16 +5,22 @@ ll-sheet-host {
   display: contents;
 }
 
+/* Always in the tree, so it can fade both ways; a closed scrim is invisible
+   and lets taps through. */
 .scrim {
   position: fixed;
   inset: 0;
   z-index: 20;
-  display: none;
   background: rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-exit) var(--ease-exit);
 }
 
 .scrim.open {
-  display: block;
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity var(--dur-quick) var(--ease-standard);
 }
 
 .sheet {
@@ -34,11 +40,19 @@ ll-sheet-host {
   background: var(--paper);
   color: var(--ink);
   transform: translateY(105%);
-  transition: transform 0.22s ease;
+  /* The closed sheet is off-screen but still in the tree while it slides
+     away, so it must not catch taps on the way out. The transition here is
+     the one that runs on the way out — accelerating, so it lingers for a
+     moment and then gets out of the way; `.open` below takes over on the
+     way in. */
+  pointer-events: none;
+  transition: transform var(--dur-exit) var(--ease-exit);
 }
 
 .sheet.open {
   transform: none;
+  pointer-events: auto;
+  transition: transform var(--dur-sheet) var(--ease-emphasized);
 }
 
 .sheet h3 {
@@ -131,13 +145,18 @@ ll-sheet-host {
     opacity: 0;
     pointer-events: none;
     transform: translateY(-40%) scale(0.98);
-    transition: transform 0.22s ease, opacity 0.22s ease;
+    transition:
+      transform var(--dur-exit) var(--ease-exit),
+      opacity var(--dur-exit) var(--ease-exit);
   }
 
   .sheet.open {
     opacity: 1;
     pointer-events: auto;
     transform: translateY(-50%) scale(1);
+    transition:
+      transform var(--dur-sheet) var(--ease-emphasized),
+      opacity var(--dur-quick) var(--ease-standard);
   }
 }
 

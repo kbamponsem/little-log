@@ -71,3 +71,25 @@ ll-chip {
   background: var(--ink);
   color: var(--paper);
 }
+
+/* "mood" — the five feelings, roomy enough for a face and a word. */
+.chip.mood {
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  min-height: 112px;
+  border-radius: 28px;
+  background: var(--chip);
+  font-size: 19px;
+  text-align: center;
+}
+
+.chip.mood .ce {
+  font-size: 40px;
+  line-height: 1;
+}
+
+.chip.mood[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--paper);
+}
