@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Little Log — preview</title>
+    <link rel="stylesheet" href="/fonts/fonts.css" />
+    <script>
+      // Temporary browser stub so the real UI can be inspected without Tauri.
+      const baby = { id: "b1", name: "Angel", born: "", photo: null };
+      const now = Date.now();
+      const entry = (id, kind, minutesAgo, extra) => ({
+        id,
+        baby_id: "b1",
+        kind,
+        occurred_at: now - minutesAgo * 60_000,
+        ended_at: null,
+        feed_kind: null,
+        amount: null,
+        amount_unit: null,
+        diaper_type: null,
+        pee_shade: null,
+        pee_amount: null,
+        poop_color: null,
+        consistency: null,
+        poop_amount: null,
+        sleep_location: null,
+        wake_mood: null,
+        mood: null,
+        note: null,
+        photo: null,
+        caregiver_id: null,
+        created_at: now,
+        updated_at: now,
+        deleted: false,
+        ...extra,
+      });
+      const entries = [
+        entry("e1", "feed", 35, {
+          feed_kind: "breast_left",
+          amount: 12,
+          amount_unit: "min",
+          ended_at: now - 23 * 60_000,
+        }),
+        entry("e2", "sleep", 120, {
+          ended_at: now - 70 * 60_000,
+          sleep_location: "crib",
+        }),
+        entry("e3", "diaper", 50, { diaper_type: "pee", pee_shade: "normal" }),
+        entry("e4", "mood", 200, { mood: "happy" }),
+      ];
+      window.__TAURI_INTERNALS__ = {
+        invoke: async (cmd) => {
+          switch (cmd) {
+            case "device_identity":
+              return "preview-device";
+            case "device_theme":
+              return "dark";
+            case "device_mood_schedule":
+              return { enabled: false, minute: 1140 };
+            case "list_babies":
+              return [baby];
+            case "current_baby":
+              return baby;
+            case "list_entries":
+              return entries;
+            case "list_caregivers":
+              return [];
+            case "join_requests":
+              return [];
+            case "sync_status":
+              return {
+                running: false,
+                last_synced_at: null,
+                received: 0,
+                sent: 0,
+                peers: [],
+                error: null,
+              };
+            case "take_widget_action":
+              return null;
+            default:
+              return null;
+          }
+        },
+      };
+    </script>
+  </head>
+  <body>
+    <ll-app></ll-app>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

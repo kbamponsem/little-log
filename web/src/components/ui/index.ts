@@ -6,6 +6,7 @@
  * module once at boot guarantees a tag is always defined and styled, no matter
  * which screen happens to be reachable first.
  */
+import "./ll-amount-picker";
 import "./ll-bar-chart";
 import "./ll-button";
 import "./ll-card";
@@ -21,10 +22,10 @@ import "./ll-photo-grid";
 import "./ll-photo-picker";
 import "./ll-sheet-host";
 import "./ll-stat";
-import "./ll-stepper";
 import "./ll-tabs";
 import "./ll-tile";
 
+export type { LlAmountPicker } from "./ll-amount-picker";
 export type { LlBarChart } from "./ll-bar-chart";
 export type { LlButton } from "./ll-button";
 export type { LlCard } from "./ll-card";
@@ -38,6 +39,5 @@ export type { LlPhotoGrid } from "./ll-photo-grid";
 export type { LlPhotoPicker } from "./ll-photo-picker";
 export type { LlSheetHost } from "./ll-sheet-host";
 export type { LlStat } from "./ll-stat";
-export type { LlStepper } from "./ll-stepper";
 export type { LlTabs } from "./ll-tabs";
 export type { LlTile } from "./ll-tile";

@@ -17,6 +17,14 @@
   --on: #0f2418;
   --onink: #e9f6ee;
 
+  /* Depth without the old hard offset shadows: a hairline, a soft top-light
+     for tonal surfaces, an ambient shadow for things that genuinely float,
+     and a faint page glow behind the content. */
+  --line: color-mix(in srgb, var(--ink) 13%, transparent);
+  --sheen: rgb(255 255 255 / 0.34);
+  --shadow-soft: 0 14px 34px rgb(0 0 0 / 0.16);
+  --bg-glow: color-mix(in srgb, var(--mood) 18%, transparent);
+
   --disp: 'Caprasimo', 'Cooper Black', Georgia, serif;
   --body: 'Jost', 'Futura', 'Century Gothic', sans-serif;
 
@@ -52,9 +60,9 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0f2a1d;
+    --bg: #07120b;
     --ink: #d6f2e2;
-    --paper: #173a29;
+    --paper: #0d1f14;
     --feed: #d9c46a;
     --sleep: #8fa3e8;
     --diaper: #e58fa5;
@@ -62,13 +70,16 @@
     --chip: #ffffff22;
     --on: #0f2418;
     --onink: #0f2418;
+    --sheen: rgb(255 255 255 / 0.12);
+    --shadow-soft: 0 18px 42px rgb(0 0 0 / 0.38);
+    --bg-glow: color-mix(in srgb, var(--mood) 11%, transparent);
   }
 }
 
 :root[data-theme="dark"] {
-  --bg: #0f2a1d;
+  --bg: #07120b;
   --ink: #d6f2e2;
-  --paper: #173a29;
+  --paper: #0d1f14;
   --feed: #d9c46a;
   --sleep: #8fa3e8;
   --diaper: #e58fa5;
@@ -76,6 +87,9 @@
   --chip: #ffffff22;
   --on: #0f2418;
   --onink: #0f2418;
+  --sheen: rgb(255 255 255 / 0.12);
+  --shadow-soft: 0 18px 42px rgb(0 0 0 / 0.38);
+  --bg-glow: color-mix(in srgb, var(--mood) 11%, transparent);
 }
 
 /* ---------------------------------------------------------------- layout */

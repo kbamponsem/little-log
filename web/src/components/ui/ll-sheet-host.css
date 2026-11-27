@@ -34,7 +34,7 @@ ll-sheet-host {
   max-height: 92vh;
   max-height: min(92dvh, 820px);
   margin: 0 auto;
-  padding: 22px 18px calc(22px + env(safe-area-inset-bottom, 0px));
+  padding: 22px 18px calc(22px + max(env(safe-area-inset-bottom, 0px), 28px));
   overflow-y: auto;
   border-radius: 36px 36px 0 0;
   background: var(--paper);
@@ -99,13 +99,22 @@ ll-sheet-host {
   width: 100%;
   margin-top: 22px;
   padding: 22px;
-  border-radius: 28px;
-  background: var(--ink);
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, var(--sheen), transparent 58%),
+    var(--ink);
   color: var(--paper);
   font-family: var(--disp);
   font-size: clamp(22px, 5.5vw, 28px);
+  letter-spacing: 0.01em;
   text-align: center;
   cursor: pointer;
+}
+
+@media (hover: hover) {
+  .go:hover {
+    filter: brightness(1.06);
+  }
 }
 
 .go:active {
@@ -166,6 +175,6 @@ ll-sheet-host {
     max-height: 96vh;
     max-height: 96dvh;
     padding-top: 16px;
-    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(16px + max(env(safe-area-inset-bottom, 0px), 28px));
   }
 }

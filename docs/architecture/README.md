@@ -110,7 +110,7 @@ against the code on 2026-11-27.
 | Event envelope: seal / open / verify | `crates/core/src/event.rs` | done |
 | Device key (ed25519) + group key (per baby) | `crates/core/src/crypto.rs` | done |
 | Append-only log, set union, `heads()` / `missing()` | `crates/core/src/log.rs` | done |
-| SQLite store (schema v11): event log, projection tables, device/group keys, peers, join requests | `crates/core/src/repo.rs` | done; the projection is rebuildable with `projection::rebuild_projection` |
+| SQLite store (schema v13): event log, projection tables, device/group keys, peers, join requests | `crates/core/src/repo.rs` | done; the projection is rebuildable with `projection::rebuild_projection` |
 | Roles matrix (`permissions::can`) | `crates/core/src/permissions.rs` | matrix done and unit-tested; not yet called when an event is validated |
 | Widget action queue | `crates/core/src/pending.rs` | done |
 | iroh QUIC endpoint: dial-by-key, invite addresses, relay fallback | `crates/sync/src/endpoint.rs` | done |

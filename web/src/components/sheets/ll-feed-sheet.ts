@@ -1,36 +1,65 @@
 import { LLSheet } from "../../core/sheet";
 import type { LlChipGroup } from "../ui/ll-chip-group";
-import type { LlStepper } from "../ui/ll-stepper";
+import type { LlAmountPicker } from "../ui/ll-amount-picker";
 import { defineComponent } from "../../core/component";
-import { capNow, setT, tv } from "../../format";
-import { FEED_KINDS } from "../../data/model";
-import type { AmountUnit, FeedKind } from "../../data/model";
+import { capNow, clock, setT, tv } from "../../format";
+import { FEED_KINDS, labelOf } from "../../data/model";
+import type { AmountUnit, Entry, FeedKind } from "../../data/model";
+import "./ll-feed-sheet.css";
 
-/** Log a feed. Breast left is selected by default, matching the prototype. */
+/** Start, stop or log a feed. Breast left is the default, as in the prototype. */
 export class LlFeedSheet extends LLSheet {
   private feedKind: FeedKind = "breast_left";
   private amount = 10;
   private unit: AmountUnit = "min";
-  private stepper: LlStepper | null = null;
+  private picker: LlAmountPicker | null = null;
   private label: HTMLElement | null = null;
+  private tick = 0;
 
   protected template(): string {
+    const live = this.store.runningFeed();
+    if (live) {
+      return `
+        <button class="x" type="button" data-action="close" aria-label="Close">×</button>
+        <h3>Feeding</h3>
+        <p class="feed-live">
+          ${labelOf(FEED_KINDS, live.feed_kind)} ·
+          <span data-slot="elapsed">${clock(Date.now() - live.occurred_at)}</span>
+        </p>
+        <p class="err" hidden></p>
+        <button class="go" type="button" data-action="stop">Stop feeding</button>
+      `;
+    }
+
     return `
       <button class="x" type="button" data-action="close" aria-label="Close">×</button>
       <h3>Feeding</h3>
       <div class="grp">What kind?</div>
       <ll-chip-group data-role="kinds"></ll-chip-group>
       <div class="grp" data-slot="amount-label">Minutes</div>
-      <ll-stepper data-role="stepper"></ll-stepper>
+      <ll-amount-picker data-role="picker"></ll-amount-picker>
       <ll-field name="when" label="When" type="time" value="${tv(Date.now())}"></ll-field>
       <ll-field name="note" label="Notes" multiline placeholder="Anything worth remembering?"></ll-field>
       <p class="err" hidden></p>
-      <button class="go" type="button" data-action="save">Log feeding now</button>
+      <div class="feed-actions">
+        <button class="go" type="button" data-action="start">Start feeding</button>
+        <button class="feed-secondary" type="button" data-action="save">Log feeding now</button>
+      </div>
     `;
   }
 
   protected mount(): void {
-    this.stepper = this.querySelector<LlStepper>('[data-role="stepper"]');
+    const live = this.store.runningFeed();
+    if (live) {
+      // The sheet can stay open on a running feed, so keep the elapsed time honest.
+      this.tick = window.setInterval(() => {
+        const slot = this.querySelector<HTMLElement>('[data-slot="elapsed"]');
+        if (slot) slot.textContent = clock(Date.now() - live.occurred_at);
+      }, 1000);
+      return;
+    }
+
+    this.picker = this.querySelector<LlAmountPicker>('[data-role="picker"]');
     this.label = this.querySelector<HTMLElement>('[data-slot="amount-label"]');
 
     this.querySelector<LlChipGroup>('[data-role="kinds"]')?.configure({
@@ -41,11 +70,16 @@ export class LlFeedSheet extends LLSheet {
       toggle: false,
     });
 
-    this.stepper?.addEventListener("ll-step", (event) => {
+    this.picker?.addEventListener("ll-step", (event) => {
       this.amount = (event as CustomEvent<{ value: number }>).detail.value;
     });
 
     this.applyKind();
+  }
+
+  protected override disconnect(): void {
+    window.clearInterval(this.tick);
+    super.disconnect();
   }
 
   protected subscribe(): void {
@@ -54,6 +88,8 @@ export class LlFeedSheet extends LLSheet {
         .action;
       if (action === "close") this.close();
       if (action === "save") void this.save();
+      if (action === "start") void this.start();
+      if (action === "stop") void this.stop();
     });
 
     this.addEventListener("ll-change", (event) => {
@@ -62,7 +98,7 @@ export class LlFeedSheet extends LLSheet {
     });
   }
 
-  /** Show/hide the stepper and keep its unit in sync with the feed kind. */
+  /** Show/hide the picker and keep its unit in sync with the feed kind. */
   private applyKind(): void {
     const bottle = this.feedKind === "bottle";
     const breast = this.feedKind === "breast_left" || this.feedKind === "breast_right";
@@ -78,11 +114,50 @@ export class LlFeedSheet extends LLSheet {
 
     if (this.label) {
       this.label.hidden = !withAmount;
-      this.label.textContent = bottle ? "Amount" : "Minutes";
+      this.label.textContent = bottle ? "Amount (ml)" : "Minutes";
     }
-    if (this.stepper) {
-      this.stepper.hidden = !withAmount;
-      this.stepper.configure(this.amount, this.unit);
+    if (this.picker) {
+      this.picker.hidden = !withAmount;
+      this.picker.configure(this.amount, this.unit);
+    }
+  }
+
+  /** Start a feed now. The end time, and therefore the duration, comes later. */
+  private async start(): Promise<void> {
+    this.error(null);
+    if (this.store.runningFeed()) {
+      this.error("A feed is already running — stop it first.");
+      return;
+    }
+
+    try {
+      await this.store.log({
+        kind: "feed",
+        occurred_at: Date.now(),
+        feed_kind: this.feedKind,
+        note: this.field("note") || null,
+      });
+      this.close();
+    } catch (error) {
+      this.error(this.message(error));
+    }
+  }
+
+  /** Stop the running feed; its duration is derived from the two timestamps. */
+  private async stop(): Promise<void> {
+    this.error(null);
+    const live = this.store.runningFeed();
+    if (!live) {
+      this.close();
+      return;
+    }
+
+    try {
+      const stopped: Entry = { ...live, ended_at: capNow(Date.now()), updated_at: Date.now() };
+      await this.store.saveEntry(stopped);
+      this.close();
+    } catch (error) {
+      this.error(this.message(error));
     }
   }
 
@@ -94,10 +169,19 @@ export class LlFeedSheet extends LLSheet {
     const breast = this.feedKind === "breast_left" || this.feedKind === "breast_right";
     const withAmount = bottle || breast;
 
+    // A completed feed needs an end time: without one the session is still
+    // running and the Today tile starts a timer. Breast feeds carry their
+    // length in minutes; millilitre feeds have no duration to recover, so they
+    // end when they were logged.
+    const occurred = capNow(setT(Date.now(), when));
+    const minutes = withAmount && this.unit === "min" ? this.amount : 0;
+    const ended = Math.min(occurred + minutes * 60_000, Date.now());
+
     try {
       await this.store.log({
         kind: "feed",
-        occurred_at: capNow(setT(Date.now(), when)),
+        occurred_at: occurred,
+        ended_at: ended,
         feed_kind: this.feedKind,
         amount: withAmount ? this.amount : null,
         amount_unit: withAmount ? this.unit : null,

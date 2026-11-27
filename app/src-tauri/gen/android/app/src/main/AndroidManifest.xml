@@ -2,6 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- The running-feed chronometer. Denying it only hides the timer. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- Scanning an invite code. Not required: a link can always be pasted
          instead, so a device with no camera is still a full participant. -->
     <uses-permission android:name="android.permission.CAMERA" />
@@ -66,5 +69,10 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/little_log_widget_info" />
         </receiver>
+        <!-- Stop action on the running-feed notification. Not exported: only
+             our own PendingIntent sends it. -->
+        <receiver
+            android:name=".feed.FeedStopReceiver"
+            android:exported="false" />
     </application>
 </manifest>

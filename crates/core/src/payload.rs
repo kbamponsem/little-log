@@ -15,8 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{CoreError, Result};
 use crate::model::{
-    Amount, AmountUnit, Baby, Consistency, DiaperType, Entry, EntryKind, FeedKind, Millis, Mood,
-    PeeShade, PoopColor, SleepLocation, WakeMood,
+    Baby, DiaperDetails, Entry, EntryKind, FeedDetails, Millis, Mood, SleepDetails,
 };
 
 /// Encode a payload for sealing. `what` names it in the error.
@@ -35,34 +34,21 @@ fn decode<T: DeserializeOwned>(bytes: &[u8], what: &str) -> Result<T> {
 }
 
 /// Everything a caregiver can set on an entry.
+///
+/// It reuses [`Entry`]'s groups, flattened the same way, so each field is
+/// defined once and the payload keeps the same flat JSON keys.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct EntryPayload {
     pub kind: EntryKind,
     pub occurred_at: Millis,
     #[serde(default)]
     pub ended_at: Option<Millis>,
-    #[serde(default)]
-    pub feed_kind: Option<FeedKind>,
-    #[serde(default)]
-    pub amount: Option<i64>,
-    #[serde(default)]
-    pub amount_unit: Option<AmountUnit>,
-    #[serde(default)]
-    pub diaper_type: Option<DiaperType>,
-    #[serde(default)]
-    pub pee_shade: Option<PeeShade>,
-    #[serde(default)]
-    pub pee_amount: Option<Amount>,
-    #[serde(default)]
-    pub poop_color: Option<PoopColor>,
-    #[serde(default)]
-    pub consistency: Option<Consistency>,
-    #[serde(default)]
-    pub poop_amount: Option<Amount>,
-    #[serde(default)]
-    pub sleep_location: Option<SleepLocation>,
-    #[serde(default)]
-    pub wake_mood: Option<WakeMood>,
+    #[serde(flatten)]
+    pub feed: FeedDetails,
+    #[serde(flatten)]
+    pub diaper: DiaperDetails,
+    #[serde(flatten)]
+    pub sleep: SleepDetails,
     #[serde(default)]
     pub mood: Option<Mood>,
     #[serde(default)]
@@ -85,17 +71,9 @@ impl EntryPayload {
             kind: entry.kind,
             occurred_at: entry.occurred_at,
             ended_at: entry.ended_at,
-            feed_kind: entry.feed_kind,
-            amount: entry.amount,
-            amount_unit: entry.amount_unit,
-            diaper_type: entry.diaper_type,
-            pee_shade: entry.pee_shade,
-            pee_amount: entry.pee_amount,
-            poop_color: entry.poop_color,
-            consistency: entry.consistency,
-            poop_amount: entry.poop_amount,
-            sleep_location: entry.sleep_location,
-            wake_mood: entry.wake_mood,
+            feed: entry.feed.clone(),
+            diaper: entry.diaper.clone(),
+            sleep: entry.sleep.clone(),
             mood: entry.mood,
             note: entry.note.clone(),
             photo: entry.photo.clone(),
@@ -174,12 +152,13 @@ impl BabyPayload {
 #[cfg(test)]
 mod entry_tests {
     use super::*;
+    use crate::model::{AmountUnit, FeedKind};
 
     fn entry() -> Entry {
         let mut entry = Entry::new(EntryKind::Feed, 1_700_000_000_000);
-        entry.feed_kind = Some(FeedKind::Bottle);
-        entry.amount = Some(120);
-        entry.amount_unit = Some(AmountUnit::Milliliters);
+        entry.feed.kind = Some(FeedKind::Bottle);
+        entry.feed.amount = Some(120);
+        entry.feed.amount_unit = Some(AmountUnit::Milliliters);
         entry.note = Some("took it all".into());
         entry
     }
@@ -191,7 +170,7 @@ mod entry_tests {
         let decoded = EntryPayload::from_bytes(&payload.to_bytes().unwrap()).unwrap();
 
         assert_eq!(decoded, payload);
-        assert_eq!(decoded.amount, Some(120));
+        assert_eq!(decoded.feed.amount, Some(120));
         assert_eq!(decoded.note.as_deref(), Some("took it all"));
     }
 
@@ -239,6 +218,11 @@ mod entry_tests {
                 !json.contains(forbidden),
                 "{forbidden} must not be authored"
             );
+        }
+
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        for group in ["feed", "diaper", "sleep"] {
+            assert!(value.get(group).is_none(), "{group} must stay flattened");
         }
     }
 

@@ -5,8 +5,11 @@ ll-card {
 }
 
 .card {
-  background: var(--paper);
-  border-radius: 28px;
+  background:
+    linear-gradient(180deg, var(--sheen), transparent 42%),
+    var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 26px;
   padding: 16px;
   margin-bottom: 14px;
 }

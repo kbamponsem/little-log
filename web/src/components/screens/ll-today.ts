@@ -4,15 +4,14 @@ import { ui } from "../../core/ui-store";
 import { store } from "../../data/store";
 import { ageStr, ago, dur, entryTitle } from "../../format";
 import { ic } from "../../icons";
-import { LlLogList } from "../ui/ll-log-list";
 import { LlStat } from "../ui/ll-stat";
 import { LlTile } from "../ui/ll-tile";
 import "./ll-today.css";
 
-/** The Today screen: summary stats, four big actions, and the timeline. */
+/** The Today screen: summary stats and four big actions. */
 export class LlToday extends LLComponent {
-  private list: LlLogList | null = null;
   private checkinTimer = 0;
+  private feedPoll = 0;
 
   protected template(): string {
     return `
@@ -38,23 +37,25 @@ export class LlToday extends LLComponent {
       <div class="links">
         <button class="link" type="button" data-action="past-nap">Log a past nap</button>
       </div>
-      <h2>Today’s timeline</h2>
-      <ll-log-list></ll-log-list>
     `;
   }
 
   protected mount(): void {
-    this.list = this.querySelector<LlLogList>("ll-log-list");
     this.renderHead();
     this.renderStats();
     this.renderTiles();
     this.renderCheckin();
-    this.renderLog();
   }
 
   protected subscribe(): void {
     this.watch(store);
     this.checkinTimer = window.setInterval(() => this.renderCheckin(), 30_000);
+    // A feed can also be stopped from its notification, which writes the event
+    // without telling this WebView. Check for that, but only re-render when the
+    // running feed actually ended.
+    this.feedPoll = window.setInterval(() => {
+      void store.refreshIfFeedStopped().catch(() => undefined);
+    }, 10_000);
     this.addEventListener("click", (event) => {
       const target = event.target as HTMLElement;
       if (target.closest("[data-action='past-nap']")) {
@@ -79,6 +80,7 @@ export class LlToday extends LLComponent {
 
   protected override disconnect(): void {
     window.clearInterval(this.checkinTimer);
+    window.clearInterval(this.feedPoll);
     super.disconnect();
   }
 
@@ -108,6 +110,7 @@ export class LlToday extends LLComponent {
 
   private renderTiles(): void {
     const nextFeed = store.lastOf("feed");
+    const feeding = store.runningFeed();
     const nextDiaper = store.lastOf("diaper");
     const lastMood = store.lastOf("mood");
     const live = store.runningSleep();
@@ -117,16 +120,23 @@ export class LlToday extends LLComponent {
       "tiles",
       tile({
         kind: "feed",
-        title: "Feed",
-        subtitle: nextFeed ? `Last: ${ago(nextFeed.occurred_at)}` : "No feeds yet",
-        icon: "milk",
+        title: feeding ? "Feeding" : "Feed",
+        subtitle: feeding
+          ? ""
+          : nextFeed
+            ? `Last: ${ago(nextFeed.occurred_at)}`
+            : "No feeds yet",
+        icon: feeding ? "hourglass" : "milk",
+        running: !!feeding,
+        timerStart: feeding?.occurred_at,
       }),
       tile({
         kind: "sleep",
         title: live ? "Wake up" : "Sleep",
-        subtitle: live ? `Asleep for ${dur(Date.now() - live.occurred_at)}` : "Tap when baby falls asleep",
-        icon: "moon",
+        subtitle: live ? "" : "Tap when baby falls asleep",
+        icon: live ? "hourglass" : "moon",
         running: !!live,
+        timerStart: live?.occurred_at,
       }),
       tile({
         kind: "diaper",
@@ -148,10 +158,6 @@ export class LlToday extends LLComponent {
   private renderCheckin(): void {
     const card = this.querySelector<HTMLElement>('[data-slot="checkin"]');
     if (card) card.hidden = !store.moodDue();
-  }
-
-  private renderLog(): void {
-    this.list?.setEntries(store.today(), "Nothing logged yet today. Tap a big button to start.");
   }
 
   private async onTile(kind: "feed" | "sleep" | "diaper" | "mood"): Promise<void> {
@@ -180,6 +186,7 @@ function tile(options: {
   subtitle: string;
   icon: string;
   running?: boolean;
+  timerStart?: number;
 }): LlTile {
   const element = new LlTile();
   element.setAttribute("kind", options.kind);
@@ -187,6 +194,7 @@ function tile(options: {
   element.setAttribute("subtitle", options.subtitle);
   element.setAttribute("icon", options.icon);
   if (options.running) element.setAttribute("running", "");
+  if (options.timerStart) element.setAttribute("timer-start", String(options.timerStart));
   return element;
 }
 

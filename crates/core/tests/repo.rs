@@ -10,9 +10,9 @@ use little_log_core::{validate, Repo};
 fn feed(repo: &Repo, updated_at: i64) -> Entry {
     let mut entry = Entry::new(EntryKind::Feed, updated_at);
     entry.updated_at = updated_at;
-    entry.feed_kind = Some(FeedKind::Bottle);
-    entry.amount = Some(90);
-    entry.amount_unit = Some(AmountUnit::Milliliters);
+    entry.feed.kind = Some(FeedKind::Bottle);
+    entry.feed.amount = Some(90);
+    entry.feed.amount_unit = Some(AmountUnit::Milliliters);
     repo.save_entry(&entry).unwrap();
     entry
 }
@@ -170,9 +170,9 @@ fn local_writes_are_validated_but_remote_clock_skew_is_tolerated() {
     let now = validate::now_millis();
 
     let mut too_big = Entry::new(EntryKind::Feed, now);
-    too_big.feed_kind = Some(FeedKind::Bottle);
-    too_big.amount = Some(5_000);
-    too_big.amount_unit = Some(AmountUnit::Milliliters);
+    too_big.feed.kind = Some(FeedKind::Bottle);
+    too_big.feed.amount = Some(5_000);
+    too_big.feed.amount_unit = Some(AmountUnit::Milliliters);
     assert!(repo.save_entry(&too_big).is_err());
 
     // A device whose clock runs ahead can still push.
@@ -210,7 +210,7 @@ fn delete_everything_tombstones_the_whole_log() {
     feed(&repo, 1_000);
     feed(&repo, 2_000);
     let mut diaper = Entry::new(EntryKind::Diaper, 3_000);
-    diaper.diaper_type = Some(DiaperType::Pee);
+    diaper.diaper.kind = Some(DiaperType::Pee);
     repo.save_entry(&diaper).unwrap();
 
     assert_eq!(repo.delete_all(None).unwrap(), 3);
@@ -225,11 +225,11 @@ fn cursor_paging_never_loses_rows_with_the_same_timestamp() {
     // Two rows sharing an updated_at, distinguishable only by id.
     let mut first = Entry::new(EntryKind::Feed, 5_000);
     first.id = "00000000-0000-7000-8000-000000000001".into();
-    first.feed_kind = Some(FeedKind::Bottle);
+    first.feed.kind = Some(FeedKind::Bottle);
     first.updated_at = 5_000;
     let mut second = Entry::new(EntryKind::Feed, 5_000);
     second.id = "00000000-0000-7000-8000-000000000002".into();
-    second.feed_kind = Some(FeedKind::Bottle);
+    second.feed.kind = Some(FeedKind::Bottle);
     second.updated_at = 5_000;
     repo.force_entry(&first).unwrap();
     repo.force_entry(&second).unwrap();
@@ -370,7 +370,7 @@ fn the_baby_id_and_author_can_be_filled_in_by_the_caller() {
     let baby = repo.ensure_baby("Ada").unwrap();
 
     let mut entry = Entry::new(EntryKind::Diaper, validate::now_millis());
-    entry.diaper_type = Some(DiaperType::Pee);
+    entry.diaper.kind = Some(DiaperType::Pee);
     entry.baby_id = baby.id.clone();
     entry.caregiver_id = Some("caregiver-1".into());
     repo.save_entry(&entry).unwrap();
@@ -387,7 +387,7 @@ fn csv_export_round_trips_from_the_repository() {
     sleep.ended_at = Some(1_000 + 80 * 60_000);
     repo.save_entry(&sleep).unwrap();
     let mut diaper = Entry::new(EntryKind::Diaper, 2_000);
-    diaper.diaper_type = Some(DiaperType::Both);
+    diaper.diaper.kind = Some(DiaperType::Both);
     diaper.note = Some("blowout".into());
     repo.save_entry(&diaper).unwrap();
 
@@ -566,6 +566,96 @@ fn upgrading_attaches_orphan_entries_and_points_at_the_child() {
             1,
             "the orphan was attached to the only child there is"
         );
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn upgrading_marks_pre_session_feeds_as_finished() {
+    let dir = std::env::temp_dir().join(format!("little-log-v13-{}", validate::now_millis()));
+    let path = dir.join("little-log.sqlite3");
+    let started_at = validate::now_millis() - 60 * 60_000;
+    let bottle_id;
+    let breast_id;
+
+    {
+        let repo = Repo::open(&path).unwrap();
+        // Feeds as the previous version wrote them: no end time, ever.
+        let mut bottle = Entry::new(EntryKind::Feed, started_at);
+        bottle.feed.kind = Some(FeedKind::Bottle);
+        bottle.feed.amount = Some(90);
+        bottle.feed.amount_unit = Some(AmountUnit::Milliliters);
+        repo.force_entry(&bottle).unwrap();
+        bottle_id = bottle.id;
+
+        let mut breast = Entry::new(EntryKind::Feed, started_at + 10 * 60_000);
+        breast.feed.kind = Some(FeedKind::BreastLeft);
+        breast.feed.amount = Some(12);
+        breast.feed.amount_unit = Some(AmountUnit::Minutes);
+        repo.force_entry(&breast).unwrap();
+        breast_id = breast.id;
+
+        // Pretend the database is one version behind and reopen it.
+        repo.connection()
+            .execute_batch("PRAGMA user_version = 11;")
+            .unwrap();
+    }
+    {
+        let repo = Repo::open(&path).unwrap();
+        // A breast feed is exactly as long as the minutes recorded.
+        assert_eq!(
+            repo.entry(&breast_id).unwrap().unwrap().ended_at,
+            Some(started_at + 10 * 60_000 + 12 * 60_000)
+        );
+        // A millilitre feed has no duration to recover, so it gets a typical one.
+        let bottle = repo.entry(&bottle_id).unwrap().unwrap();
+        assert_eq!(bottle.ended_at, Some(started_at + 10 * 60_000));
+        assert_eq!(bottle.feed.amount, Some(90));
+        assert!(
+            repo.running_feed().unwrap().is_none(),
+            "no phantom running feed"
+        );
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_running_feed_survives_reopening_and_stops_cleanly() {
+    let dir = std::env::temp_dir().join(format!("little-log-feed-{}", validate::now_millis()));
+    let path = dir.join("little-log.sqlite3");
+    let started_at = validate::now_millis() - 5 * 60_000;
+    let feed_id;
+
+    {
+        let repo = Repo::open(&path).unwrap();
+        let baby = repo.ensure_baby("Ada").unwrap();
+        let baby_id = baby.id.clone().unwrap();
+
+        let mut feed = Entry::new(EntryKind::Feed, started_at);
+        feed.baby_id = Some(baby_id.clone());
+        feed.feed.kind = Some(FeedKind::BreastLeft);
+        feed.updated_at = started_at;
+        repo.save_entry(&feed).unwrap();
+        feed_id = feed.id;
+
+        assert!(repo.running_feed().unwrap().is_some());
+        assert!(repo.running_feed_for(&baby_id).unwrap().is_some());
+        assert!(repo.running_feed_for("another-baby").unwrap().is_none());
+    }
+    {
+        let repo = Repo::open(&path).unwrap();
+        assert_eq!(repo.running_feed().unwrap().unwrap().id, feed_id);
+
+        let mut stopped = repo.entry(&feed_id).unwrap().unwrap();
+        stopped.ended_at = Some(started_at + 5 * 60_000);
+        stopped.updated_at = started_at + 5 * 60_000;
+        repo.save_entry(&stopped).unwrap();
+
+        assert!(repo.running_feed().unwrap().is_none());
+        let stopped = repo.entry(&feed_id).unwrap().unwrap();
+        assert_eq!(stopped.ended_at, Some(started_at + 5 * 60_000));
+        assert_eq!(stopped.feed.kind, Some(FeedKind::BreastLeft));
+        assert_eq!(stopped.duration_ms(started_at + 5 * 60_000), 5 * 60_000);
     }
     let _ = std::fs::remove_dir_all(&dir);
 }

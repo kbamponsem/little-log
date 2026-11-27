@@ -1,0 +1,56 @@
+/* A feed already running: the sheet shows the elapsed time instead of the form. */
+.feed-live {
+  margin: 4px 0 8px;
+  font-size: clamp(18px, 4.5vw, 22px);
+  font-weight: 600;
+}
+
+/* Secondary action next to Start feeding — outlined, not a second primary. */
+.feed-secondary {
+  all: unset;
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  padding: 16px;
+  border: 2px solid var(--ink);
+  border-radius: 22px;
+  color: var(--ink);
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+}
+
+.feed-secondary:active {
+  transform: scale(0.98);
+}
+
+/*
+ * On a phone the form is taller than the sheet, and scrolling it to reach
+ * "Log feeding now" could snap back and make the tap land on Start instead.
+ * Pin both actions above the gesture bar so neither is ever a moving target.
+ */
+@media (max-width: 699px) {
+  .feed-actions {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 3;
+    padding: 10px 18px calc(10px + max(env(safe-area-inset-bottom, 0px), 28px));
+    background: var(--paper);
+    box-shadow: 0 -16px 24px var(--paper);
+  }
+
+  .feed-actions .go {
+    margin-top: 0;
+  }
+
+  /* The actions are pinned to the viewport, so leave enough space at the end
+     of the form for the last field to scroll clear of them. The running-feed
+     view has no pinned actions, so it keeps its natural height. */
+  ll-feed-sheet:has(.feed-actions) {
+    display: block;
+    padding-bottom: calc(160px + env(safe-area-inset-bottom, 0px));
+  }
+}

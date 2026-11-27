@@ -22,10 +22,10 @@ ll-tabs {
   --tab-inset: 8px;
   --tab-height: calc(var(--tab-body-height) + 2 * var(--tab-inset));
 
-  position: absolute;
+  position: fixed;
   left: 0;
   right: 0;
-  bottom: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
   z-index: 10;
   display: flex;
   gap: 4px;
@@ -36,10 +36,12 @@ ll-tabs {
   padding: 0 4px;
   /* Clip the items' press layers to the pill's curve. */
   overflow: hidden;
-  background: var(--paper);
-  border: var(--tab-border) solid var(--chip);
+  background: color-mix(in srgb, var(--paper) 86%, transparent);
+  border: var(--tab-border) solid var(--line);
   border-radius: 999px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(18px) saturate(1.15);
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
 }
 
 .tab {

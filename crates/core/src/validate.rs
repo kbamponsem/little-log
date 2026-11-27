@@ -84,15 +84,20 @@ fn validate_photo_name(name: &str, entry_id: &str) -> Result<()> {
 }
 
 fn validate_feed(entry: &Entry) -> Result<()> {
-    let Some(feed_kind) = entry.feed_kind else {
+    let Some(feed_kind) = entry.feed.kind else {
         return Err(CoreError::invalid("a feed needs a feed_kind"));
     };
-    if entry.ended_at.is_some() {
-        return Err(CoreError::invalid("a feed cannot have an end time"));
+    // A feed is a session like sleep: no end time while it is running, one
+    // after the parent stops it. Migrated feeds end when they start (they were
+    // point-in-time entries), so an end equal to the start is valid.
+    if let Some(end) = entry.ended_at {
+        if end < entry.occurred_at {
+            return Err(CoreError::invalid("a feed cannot end before it started"));
+        }
     }
 
-    let amount = entry.amount;
-    let unit = entry.amount_unit;
+    let amount = entry.feed.amount;
+    let unit = entry.feed.amount_unit;
 
     match feed_kind {
         FeedKind::BreastLeft | FeedKind::BreastRight => {
@@ -146,7 +151,7 @@ fn validate_sleep(entry: &Entry) -> Result<()> {
 }
 
 fn validate_diaper(entry: &Entry) -> Result<()> {
-    if entry.diaper_type.is_none() {
+    if entry.diaper.kind.is_none() {
         return Err(CoreError::invalid("a diaper change needs a diaper_type"));
     }
     if entry.ended_at.is_some() {
@@ -183,15 +188,15 @@ mod tests {
 
     fn feed(kind: FeedKind) -> Entry {
         let mut entry = Entry::new(EntryKind::Feed, now_millis());
-        entry.feed_kind = Some(kind);
+        entry.feed.kind = Some(kind);
         entry
     }
 
     #[test]
     fn a_plain_breast_feed_is_valid() {
         let mut entry = feed(FeedKind::BreastLeft);
-        entry.amount = Some(12);
-        entry.amount_unit = Some(AmountUnit::Minutes);
+        entry.feed.amount = Some(12);
+        entry.feed.amount_unit = Some(AmountUnit::Minutes);
         assert!(validate_now(&entry).is_ok());
     }
 
@@ -204,25 +209,43 @@ mod tests {
     #[test]
     fn breast_feeds_are_measured_in_minutes() {
         let mut entry = feed(FeedKind::BreastRight);
-        entry.amount = Some(90);
-        entry.amount_unit = Some(AmountUnit::Milliliters);
+        entry.feed.amount = Some(90);
+        entry.feed.amount_unit = Some(AmountUnit::Milliliters);
         assert!(validate_now(&entry).is_err());
     }
 
     #[test]
     fn amounts_are_range_checked() {
         let mut entry = feed(FeedKind::Bottle);
-        entry.amount = Some(5000);
-        entry.amount_unit = Some(AmountUnit::Milliliters);
+        entry.feed.amount = Some(5000);
+        entry.feed.amount_unit = Some(AmountUnit::Milliliters);
         assert!(validate_now(&entry).is_err());
 
-        entry.amount = Some(90);
+        entry.feed.amount = Some(90);
         assert!(validate_now(&entry).is_ok());
 
         let mut long = feed(FeedKind::BreastLeft);
-        long.amount = Some(400);
-        long.amount_unit = Some(AmountUnit::Minutes);
+        long.feed.amount = Some(400);
+        long.feed.amount_unit = Some(AmountUnit::Minutes);
         assert!(validate_now(&long).is_err());
+    }
+
+    #[test]
+    fn a_feed_may_be_running_or_stopped_but_must_end_after_it_starts() {
+        let mut entry = feed(FeedKind::BreastLeft);
+        entry.occurred_at = 1_000;
+        entry.ended_at = None; // still feeding — fine
+        assert!(validate_now(&entry).is_ok());
+
+        entry.ended_at = Some(2_000);
+        assert!(validate_now(&entry).is_ok());
+
+        // A migrated pre-session feed ends when it starts.
+        entry.ended_at = Some(1_000);
+        assert!(validate_now(&entry).is_ok());
+
+        entry.ended_at = Some(999);
+        assert!(validate_now(&entry).is_err());
     }
 
     #[test]
@@ -253,13 +276,13 @@ mod tests {
         let mut entry = Entry::new(EntryKind::Diaper, now_millis());
         assert!(validate_now(&entry).is_err());
 
-        entry.diaper_type = Some(DiaperType::Both);
-        entry.pee_shade = Some(PeeShade::Normal);
-        entry.pee_amount = Some(Amount::Medium);
-        entry.poop_color = Some(PoopColor::Mustard);
-        entry.consistency = Some(Consistency::Soft);
-        entry.poop_amount = Some(Amount::Small);
-        entry.sleep_location = Some(SleepLocation::Crib); // ignored, not rejected
+        entry.diaper.kind = Some(DiaperType::Both);
+        entry.diaper.pee_shade = Some(PeeShade::Normal);
+        entry.diaper.pee_amount = Some(Amount::Medium);
+        entry.diaper.poop_color = Some(PoopColor::Mustard);
+        entry.diaper.consistency = Some(Consistency::Soft);
+        entry.diaper.poop_amount = Some(Amount::Small);
+        entry.sleep.location = Some(SleepLocation::Crib); // ignored, not rejected
         assert!(validate_now(&entry).is_ok());
     }
 
@@ -294,7 +317,7 @@ mod tests {
     #[test]
     fn photo_names_cannot_escape_the_photos_directory() {
         let mut entry = Entry::new(EntryKind::Diaper, now_millis());
-        entry.diaper_type = Some(DiaperType::Pee);
+        entry.diaper.kind = Some(DiaperType::Pee);
 
         entry.photo = Some("../../etc/passwd".to_string());
         assert!(validate_now(&entry).is_err());

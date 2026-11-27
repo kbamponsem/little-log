@@ -4,7 +4,10 @@ ll-stat {
   display: block;
   flex: 1 1 92px;
   min-width: 0;
-  background: var(--chip);
+  background:
+    linear-gradient(150deg, var(--sheen), transparent 60%),
+    color-mix(in srgb, var(--paper) 72%, var(--chip));
+  border: 1px solid var(--line);
   border-radius: 18px;
   padding: 10px 12px;
 }

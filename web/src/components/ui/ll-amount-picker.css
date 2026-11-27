@@ -1,0 +1,85 @@
+/* <ll-amount-picker> — a horizontal, snapping number strip. */
+
+ll-amount-picker {
+  display: block;
+}
+
+.picker {
+  --picker-item: 78px;
+  --picker-half: 39px;
+  position: relative;
+  height: 86px;
+  margin: 2px 0 8px;
+}
+
+/* The band behind the centred value. */
+.picker::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--picker-item);
+  height: 66px;
+  transform: translate(-50%, -50%);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  pointer-events: none;
+}
+
+.picker-scroll {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* Half a viewport minus half an item, so the first and last values can sit
+     in the centre band without adding an outer gap beyond the sheet layout. */
+  padding-inline: calc(50% - var(--picker-half));
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  cursor: grab;
+}
+
+.picker-scroll:active {
+  cursor: grabbing;
+}
+
+.picker-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.picker-scroll:focus-visible {
+  border-radius: 24px;
+  outline: 3px solid var(--ink);
+  outline-offset: 4px;
+}
+
+.picker-item {
+  flex: 0 0 var(--picker-item);
+  display: grid;
+  place-items: center;
+  height: 100%;
+  scroll-snap-align: center;
+  color: color-mix(in srgb, var(--ink) 42%, transparent);
+  font-family: var(--disp);
+  font-size: 26px;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+  transition:
+    color var(--dur-quick) var(--ease-standard),
+    transform var(--dur-quick) var(--ease-standard);
+}
+
+.picker-item.is-selected {
+  color: var(--ink);
+  transform: scale(1.12);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .picker-item {
+    transition: none;
+  }
+}

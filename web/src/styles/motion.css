@@ -30,7 +30,8 @@ button.chip,
 .baby,
 .add-baby,
 .ph,
-.tile {
+.tile,
+.checkin {
   position: relative;
   overflow: hidden;
   touch-action: manipulation;
@@ -48,10 +49,13 @@ button.chip,
 .step-btn,
 .baby,
 .add-baby,
-.ph {
+.ph,
+.tile,
+.checkin {
   transition:
     transform var(--dur-press) var(--ease-standard),
     background-color var(--dur-quick) var(--ease-standard),
+    filter var(--dur-quick) var(--ease-standard),
     opacity var(--dur-quick) var(--ease-standard);
 }
 
@@ -96,7 +100,9 @@ button.chip:active,
 .step-btn:active,
 .baby:active,
 .add-baby:active,
-.ph:active {
+.ph:active,
+.tile:active,
+.checkin:active {
   transform: scale(0.975);
 }
 
@@ -191,7 +197,9 @@ ll-welcome {
   .step-btn,
   .baby,
   .add-baby,
-  .ph {
+  .ph,
+  .tile,
+  .checkin {
     transition: none;
   }
 }

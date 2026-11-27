@@ -41,7 +41,9 @@ class LogActionCallback : ActionCallback {
             return
         }
         // Redraw now that the entry is stored — awaited, because this coroutine
-        // is the only thing keeping the request alive.
+        // is the only thing keeping the request alive. A fresh update session is
+        // started per widget; reusing this callback's own session closes without
+        // recomposing, which left the tapped card showing its old sleep state.
         WidgetUpdater.updateAndWait(context)
     }
 
