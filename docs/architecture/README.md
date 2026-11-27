@@ -100,8 +100,9 @@ Open `06-gossip-animated.svg` directly to watch the event propagate.
 
 ## What already exists in the code
 
-The model above is the target in `PLAN.md`. As of this writing, `crates/core`
-implements the foundation; the networking layer is the phase-2 spike.
+The model above is the target in `PLAN.md`. This table is what the tree actually
+contains; every claim names the path it can be checked against. Last checked
+against the code on 2026-11-27.
 
 | Element in the diagrams | Where | Status |
 |---|---|---|
@@ -109,12 +110,16 @@ implements the foundation; the networking layer is the phase-2 spike.
 | Event envelope: seal / open / verify | `crates/core/src/event.rs` | done |
 | Device key (ed25519) + group key (per baby) | `crates/core/src/crypto.rs` | done |
 | Append-only log, set union, `heads()` / `missing()` | `crates/core/src/log.rs` | done |
-| Store: `events` + `device_keys` tables | `crates/core/src/repo.rs` (schema v3) | in progress |
-| Roles matrix (`permissions::can`) | `crates/core/src/permissions.rs` | done, applied server-side today |
+| SQLite store (schema v11): event log, projection tables, device/group keys, peers, join requests | `crates/core/src/repo.rs` | done; the projection is rebuildable with `projection::rebuild_projection` |
+| Roles matrix (`permissions::can`) | `crates/core/src/permissions.rs` | matrix done and unit-tested; not yet called when an event is validated |
 | Widget action queue | `crates/core/src/pending.rs` | done |
-| `crates/sync` — QUIC, gossip fan-out, anti-entropy, discovery | — | planned (phase 2 spike) |
-| Always-on peer + iroh relay | `deploy/` | planned (phase 5) |
-| Tauri app, Glance widget | `app/` | exists |
+| iroh QUIC endpoint: dial-by-key, invite addresses, relay fallback | `crates/sync/src/endpoint.rs` | done |
+| Anti-entropy: version-vector exchange per topic, join handshake | `crates/sync/src/protocol.rs` | done; covered by `crates/sync/tests/join.rs` |
+| Gossip fan-out (§6) | — | not started |
+| mDNS LAN discovery | — | not started |
+| Always-on peer | `peer/` | not started (phase 5) |
+| Self-hosted iroh relay | `deploy/` | not started; `deploy/` still provisions the removed server |
+| Tauri app, Glance widget, in-process core + sync | `app/` | exists |
 | Frontend custom elements | `web/` | exists |
 
 ## Regenerating the diagrams
