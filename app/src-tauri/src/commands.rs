@@ -74,7 +74,10 @@ pub fn save_device_mood_schedule(
     state: State<'_, AppState>,
     schedule: MoodSchedule,
 ) -> CmdResult<()> {
-    state.repo().save_device_mood_schedule(&schedule).map_err(fail)
+    state
+        .repo()
+        .save_device_mood_schedule(&schedule)
+        .map_err(fail)
 }
 
 /* ---------------------------------------------------------------- entries */

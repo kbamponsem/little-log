@@ -31,8 +31,10 @@ const WIDGET_SHEETS: Record<string, SheetName> = {
   breast_left: "feed",
   breast_right: "feed",
   bottle: "feed",
+  feed: "feed",
   pee: "diaper",
   poop: "diaper",
+  diaper: "diaper",
   sleep_toggle: "sleep",
 };
 
@@ -72,6 +74,15 @@ async function boot(): Promise<void> {
  * on the way back so what they did is actually there to see. */
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible") return;
+  void store.refresh();
+  void openWidgetSheet();
+});
+
+/* The notification shade does not change document visibility, so a Stop tapped
+ * there while the app is foreground would otherwise leave the feed looking
+ * running. Focus returns when the shade closes — re-read both the log and any
+ * action the notification handed over. */
+window.addEventListener("focus", () => {
   void store.refresh();
   void openWidgetSheet();
 });

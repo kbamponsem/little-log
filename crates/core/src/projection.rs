@@ -86,17 +86,9 @@ pub fn resolve(events: &[Event], group: &GroupKey) -> Result<Option<Entry>> {
         kind: payload.kind,
         occurred_at: payload.occurred_at,
         ended_at: payload.ended_at,
-        feed_kind: payload.feed_kind,
-        amount: payload.amount,
-        amount_unit: payload.amount_unit,
-        diaper_type: payload.diaper_type,
-        pee_shade: payload.pee_shade,
-        pee_amount: payload.pee_amount,
-        poop_color: payload.poop_color,
-        consistency: payload.consistency,
-        poop_amount: payload.poop_amount,
-        sleep_location: payload.sleep_location,
-        wake_mood: payload.wake_mood,
+        feed: payload.feed,
+        diaper: payload.diaper,
+        sleep: payload.sleep,
         mood: payload.mood,
         note: payload.note,
         photo: payload.photo,
@@ -304,7 +296,9 @@ impl Repo {
 mod tests {
     use super::*;
     use crate::crypto::DeviceKey;
-    use crate::model::{AmountUnit, EntryKind, FeedKind, Theme};
+    use crate::model::{
+        AmountUnit, DiaperDetails, EntryKind, FeedDetails, FeedKind, SleepDetails, Theme,
+    };
 
     /// A device with its own database: a key to sign with, a group key to seal
     /// with, and a log to fold.
@@ -343,9 +337,9 @@ mod tests {
         ) -> Event {
             let mut payload = EntryPayload::of(&Entry::new(EntryKind::Feed, at));
             payload.kind = EntryKind::Feed;
-            payload.feed_kind = Some(FeedKind::Bottle);
-            payload.amount = Some(amount);
-            payload.amount_unit = Some(AmountUnit::Milliliters);
+            payload.feed.kind = Some(FeedKind::Bottle);
+            payload.feed.amount = Some(amount);
+            payload.feed.amount_unit = Some(AmountUnit::Milliliters);
 
             Event::seal(
                 &self.key,
@@ -432,25 +426,39 @@ mod tests {
                             kind: row.get::<_, String>(2)?.parse().unwrap(),
                             occurred_at: row.get(3)?,
                             ended_at: row.get(4)?,
-                            feed_kind: row.get::<_, Option<String>>(5)?.map(|v| v.parse().unwrap()),
-                            amount: row.get(6)?,
-                            amount_unit: row
-                                .get::<_, Option<String>>(7)?
-                                .map(|v| v.parse().unwrap()),
-                            diaper_type: row.get::<_, Option<String>>(8)?.map(|v| v.parse().unwrap()),
-                            pee_shade: row.get::<_, Option<String>>(9)?.map(|v| v.parse().unwrap()),
-                            pee_amount: row.get::<_, Option<String>>(10)?.map(|v| v.parse().unwrap()),
-                            poop_color: row.get::<_, Option<String>>(11)?.map(|v| v.parse().unwrap()),
-                            consistency: row
-                                .get::<_, Option<String>>(12)?
-                                .map(|v| v.parse().unwrap()),
-                            poop_amount: row
-                                .get::<_, Option<String>>(13)?
-                                .map(|v| v.parse().unwrap()),
-                            sleep_location: row
-                                .get::<_, Option<String>>(14)?
-                                .map(|v| v.parse().unwrap()),
-                            wake_mood: row.get::<_, Option<String>>(15)?.map(|v| v.parse().unwrap()),
+                            feed: FeedDetails {
+                                kind: row.get::<_, Option<String>>(5)?.map(|v| v.parse().unwrap()),
+                                amount: row.get(6)?,
+                                amount_unit: row
+                                    .get::<_, Option<String>>(7)?
+                                    .map(|v| v.parse().unwrap()),
+                            },
+                            diaper: DiaperDetails {
+                                kind: row.get::<_, Option<String>>(8)?.map(|v| v.parse().unwrap()),
+                                pee_shade: row
+                                    .get::<_, Option<String>>(9)?
+                                    .map(|v| v.parse().unwrap()),
+                                pee_amount: row
+                                    .get::<_, Option<String>>(10)?
+                                    .map(|v| v.parse().unwrap()),
+                                poop_color: row
+                                    .get::<_, Option<String>>(11)?
+                                    .map(|v| v.parse().unwrap()),
+                                consistency: row
+                                    .get::<_, Option<String>>(12)?
+                                    .map(|v| v.parse().unwrap()),
+                                poop_amount: row
+                                    .get::<_, Option<String>>(13)?
+                                    .map(|v| v.parse().unwrap()),
+                            },
+                            sleep: SleepDetails {
+                                location: row
+                                    .get::<_, Option<String>>(14)?
+                                    .map(|v| v.parse().unwrap()),
+                                wake_mood: row
+                                    .get::<_, Option<String>>(15)?
+                                    .map(|v| v.parse().unwrap()),
+                            },
                             note: row.get(16)?,
                             photo: row.get(17)?,
                             caregiver_id: row.get(18)?,
@@ -480,7 +488,7 @@ mod tests {
 
         let resolved = resolve(&[create, edit], &peer.group).unwrap().unwrap();
 
-        assert_eq!(resolved.amount, Some(150));
+        assert_eq!(resolved.feed.amount, Some(150));
         assert_eq!(resolved.id, "e1");
         assert_eq!(resolved.baby_id.as_deref(), Some("baby-1"));
         assert!(!resolved.deleted);
@@ -503,7 +511,7 @@ mod tests {
 
         assert_eq!(forwards, backwards);
         assert_eq!(forwards, shuffled);
-        assert_eq!(forwards.unwrap().amount, Some(200));
+        assert_eq!(forwards.unwrap().feed.amount, Some(200));
     }
 
     #[test]
@@ -530,7 +538,7 @@ mod tests {
             .unwrap();
 
         assert!(!resolved.deleted);
-        assert_eq!(resolved.amount, Some(120));
+        assert_eq!(resolved.feed.amount, Some(120));
     }
 
     #[test]
@@ -578,7 +586,11 @@ mod tests {
 
         let resolved = resolve(&[good, rubbish], &peer.group).unwrap().unwrap();
 
-        assert_eq!(resolved.amount, Some(100), "the readable write still wins");
+        assert_eq!(
+            resolved.feed.amount,
+            Some(100),
+            "the readable write still wins"
+        );
     }
 
     #[test]
@@ -675,7 +687,7 @@ mod tests {
 
         assert!(!peer.apply(&create), "the log already had it");
         assert_eq!(peer.rows(), 1);
-        assert_eq!(peer.row("e1").unwrap().amount, Some(100));
+        assert_eq!(peer.row("e1").unwrap().feed.amount, Some(100));
     }
 
     /* ------------------------------------------------------------- babies */
@@ -771,6 +783,66 @@ mod tests {
             peer.repo.running_sleep_for("b2").unwrap().is_none(),
             "Bo is not the one asleep"
         );
+    }
+
+    #[test]
+    fn concurrent_feed_stops_converge_on_both_devices() {
+        let alice = Peer::new();
+        let bob = Peer::with_group(&alice.group);
+
+        let mut started = Entry::new(EntryKind::Feed, 2_000);
+        started.id = "f1".into();
+        started.baby_id = Some("b1".into());
+        started.feed.kind = Some(FeedKind::Bottle);
+        started.feed.amount = Some(90);
+        started.feed.amount_unit = Some(AmountUnit::Milliliters);
+
+        let start = Event::seal(
+            &alice.key,
+            &alice.group,
+            "b1",
+            "f1",
+            EventKind::Create,
+            Hlc::new(2_000, 0, alice.key.id()),
+            &EntryPayload::of(&started).to_bytes().unwrap(),
+        )
+        .unwrap();
+
+        let stop = |peer: &Peer, at: i64| {
+            let mut stopped = started.clone();
+            stopped.ended_at = Some(at);
+            stopped.updated_at = at;
+            Event::seal(
+                &peer.key,
+                &peer.group,
+                "b1",
+                "f1",
+                EventKind::Edit,
+                Hlc::new(at, 0, peer.key.id()),
+                &EntryPayload::of(&stopped).to_bytes().unwrap(),
+            )
+            .unwrap()
+        };
+        let alice_stop = stop(&alice, 3_000);
+        let bob_stop = stop(&bob, 4_000);
+
+        // Both devices see the start, then the two stops in opposite orders.
+        for peer in [&alice, &bob] {
+            peer.apply(&start);
+        }
+        alice.apply(&alice_stop);
+        alice.apply(&bob_stop);
+        bob.apply(&bob_stop);
+        bob.apply(&alice_stop);
+
+        let from_alice = alice.repo.entry("f1").unwrap().unwrap();
+        let from_bob = bob.repo.entry("f1").unwrap().unwrap();
+
+        assert_eq!(from_alice.ended_at, Some(4_000), "the newest write wins");
+        assert_eq!(from_alice, from_bob, "both devices converge");
+        assert_eq!(bob.repo.entries_for("b1").unwrap().len(), 1);
+        assert!(alice.repo.running_feed_for("b1").unwrap().is_none());
+        assert!(bob.repo.running_feed_for("b1").unwrap().is_none());
     }
 
     #[test]

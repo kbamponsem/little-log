@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Launcher shortcuts, the same six actions as the widget's buttons.
-  They hand MainActivity an extra; the entry is written before the UI loads.
+  Launcher shortcuts for the detailed actions. The widget has its own four
+  buttons (Feed, Diaper, Sleep, Wake Up); these reach the same sheets through
+  MainActivity.
 -->
 <shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
 

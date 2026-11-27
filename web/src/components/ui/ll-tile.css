@@ -1,33 +1,45 @@
-/* <ll-tile> — the big Today action button. */
+/* <ll-tile> — the big Today action button.
+   A soft tonal card: a light gradient and a hairline do the separating, so the
+   old hard offset shadow is gone. */
 
 ll-tile {
   display: contents;
 }
 
 .tile {
+  --tint: var(--feed);
   all: unset;
   box-sizing: border-box;
+  position: relative;
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 16px;
-  min-height: 132px;
-  padding: 18px 22px;
-  border-radius: 34px;
+  min-height: 128px;
+  padding: 20px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--tint) 52%, var(--on) 18%);
+  border-radius: 30px;
   color: var(--on);
-  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.28);
-  transition: transform 0.08s, box-shadow 0.08s;
-}
-
-.tile:active {
-  transform: translateY(5px);
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.28);
+  background:
+    linear-gradient(150deg, var(--sheen), transparent 55%),
+    var(--tint);
 }
 
 .tile .em {
-  display: flex;
-  font-size: 54px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--on) 10%, transparent);
   line-height: 1;
+}
+
+.tile .em .ic {
+  width: 38px;
+  height: 38px;
 }
 
 .tile .t {
@@ -41,22 +53,41 @@ ll-tile {
   margin-top: 6px;
   font-size: 16px;
   font-weight: 500;
+  opacity: 0.78;
+}
+
+/* A live feed clock: large, tabular, and steady while the hourglass flips. */
+.tile .timer {
+  display: block;
+  margin-top: 2px;
+  font-size: clamp(28px, 7vw, 36px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  opacity: 1;
+}
+
+/* The hourglass turns over every few seconds — the timer equivalent of a pulse. */
+.tile .em.ticking svg {
+  animation: hourglass 3s ease-in-out infinite;
+  transform-origin: 50% 50%;
 }
 
 .feed {
-  background: var(--feed);
+  --tint: var(--feed);
 }
 
 .sleep {
-  background: var(--sleep);
+  --tint: var(--sleep);
 }
 
 .diaper {
-  background: var(--diaper);
+  --tint: var(--diaper);
 }
 
 .mood {
-  background: var(--mood);
+  --tint: var(--mood);
 }
 
 /* A running sleep pulses gently. */
@@ -64,17 +95,32 @@ ll-tile {
   animation: pulse 2.4s ease-in-out infinite;
 }
 
+/* Pointer devices get a small lift; touch devices just get the press state. */
+@media (hover: hover) {
+  .tile:hover {
+    transform: translateY(-2px);
+    filter: brightness(1.03);
+  }
+}
+
 /* Tablet and up: trim the tile so a row of actions stays compact. */
 @media (min-width: 700px) {
   .tile {
-    min-height: 120px;
-    gap: 12px;
+    min-height: 116px;
+    gap: 14px;
     padding: 16px 18px;
-    border-radius: 30px;
+    border-radius: 26px;
   }
 
   .tile .em {
-    font-size: 44px;
+    width: 56px;
+    height: 56px;
+    border-radius: 17px;
+  }
+
+  .tile .em .ic {
+    width: 32px;
+    height: 32px;
   }
 
   .tile .s {
@@ -82,8 +128,61 @@ ll-tile {
   }
 }
 
+/* Desktop: four tiles share the row, so trim the type and badge just enough
+   that a two-word title like "Wake up" still fits on one line. */
+@media (min-width: 1100px) {
+  .tile {
+    gap: 12px;
+    padding: 16px;
+  }
+
+  .tile .em {
+    width: 52px;
+    height: 52px;
+    border-radius: 16px;
+  }
+
+  .tile .em .ic {
+    width: 30px;
+    height: 30px;
+  }
+
+  .tile .t {
+    font-size: 30px;
+  }
+
+  .tile .s {
+    font-size: 14px;
+  }
+
+  .tile .timer {
+    font-size: 32px;
+  }
+}
+
 @keyframes pulse {
   50% {
     filter: brightness(1.12);
+  }
+}
+
+@keyframes hourglass {
+  0%,
+  42% {
+    transform: rotate(0deg);
+  }
+  58%,
+  100% {
+    transform: rotate(180deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tile .em.ticking svg {
+    animation: none;
+  }
+
+  .tile:hover {
+    transform: none;
   }
 }

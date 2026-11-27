@@ -138,6 +138,42 @@ fn refresh_from(repo: &Repo, paths: &WidgetPaths, tz_offset_minutes: i32) -> Res
     Ok(state)
 }
 
+/* ------------------------------------------------------------ feed timer */
+
+/// When the running feed started, if one is running.
+///
+/// The Android notification posts a chronometer from this timestamp, so the
+/// elapsed time stays right even when the notification is shown late.
+#[cfg(any(target_os = "android", test))]
+pub fn running_feed_start(paths: &WidgetPaths) -> Result<Option<i64>> {
+    Ok(paths
+        .open_repo()?
+        .running_feed()?
+        .map(|entry| entry.occurred_at))
+}
+
+/// Stop the running feed by authoring an edit event.
+///
+/// This deliberately goes through `record_new_entry` instead of writing the
+/// row: a stop tapped in the notification has to be an event like any other,
+/// or it would exist on this device and nowhere else.
+#[cfg(any(target_os = "android", test))]
+pub fn stop_feed(paths: &WidgetPaths) -> Result<bool> {
+    let repo = paths.open_repo()?;
+    let Some(mut entry) = repo.running_feed()? else {
+        return Ok(false);
+    };
+    let key = repo.device_key()?;
+    let mut clock = repo.clock(key.id())?;
+    let now = now_millis();
+    // Validation wants a stop strictly after the start; clock skew could
+    // otherwise make "now" land at or before a start authored a moment ahead.
+    entry.ended_at = Some(now.max(entry.occurred_at + 1));
+    entry.updated_at = now;
+    repo.record_new_entry(&key, &mut clock, &entry)?;
+    Ok(true)
+}
+
 /* --------------------------------------------------------------------- JNI */
 
 /// Called from `app.littlelog.widget.WidgetBridge` — Kotlin's WorkManager
@@ -148,10 +184,10 @@ mod android {
     use std::path::PathBuf;
 
     use jni::objects::{JObject, JString};
-    use jni::sys::{jboolean, jint};
+    use jni::sys::{jboolean, jint, jlong};
     use jni::JNIEnv;
 
-    use super::{drain_and_refresh, refresh, WidgetPaths};
+    use super::{drain_and_refresh, refresh, running_feed_start, stop_feed, WidgetPaths};
 
     /// Read a `String` argument, or return `None` (and let the caller bail).
     fn string_arg(env: &mut JNIEnv, value: &JString) -> Option<String> {
@@ -192,12 +228,43 @@ mod android {
         let paths = WidgetPaths::discover(PathBuf::from(dir));
         let _ = refresh(&paths, tz_offset_minutes);
     }
+
+    /// Start of the running feed (epoch millis), or 0 when none is running.
+    /// Called from `app.littlelog.feed.FeedBridge` so the notification can post
+    /// a chronometer that started when the feed did.
+    #[no_mangle]
+    pub extern "system" fn Java_app_littlelog_feed_FeedBridge_nativeRunningStart(
+        mut env: JNIEnv,
+        _this: JObject,
+        data_dir: JString,
+    ) -> jlong {
+        let Some(dir) = string_arg(&mut env, &data_dir) else {
+            return 0;
+        };
+        let paths = WidgetPaths::new(PathBuf::from(dir));
+        running_feed_start(&paths).ok().flatten().unwrap_or(0)
+    }
+
+    /// Stop the running feed from the notification action. Returns whether a
+    /// feed was running.
+    #[no_mangle]
+    pub extern "system" fn Java_app_littlelog_feed_FeedBridge_nativeStop(
+        mut env: JNIEnv,
+        _this: JObject,
+        data_dir: JString,
+    ) -> jboolean {
+        let Some(dir) = string_arg(&mut env, &data_dir) else {
+            return 0;
+        };
+        let paths = WidgetPaths::new(PathBuf::from(dir));
+        jboolean::from(stop_feed(&paths).unwrap_or(false))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use little_log_core::model::{Entry, EntryKind, FeedKind};
+    use little_log_core::model::{Entry, EntryKind, EventKind, FeedKind};
     use little_log_core::pending::{append, PendingAction, WidgetAction};
 
     #[test]
@@ -224,6 +291,43 @@ mod tests {
         let written = std::fs::read_to_string(paths.state()).unwrap();
         assert!(written.contains("\"feeds_today\":1"));
         assert!(!paths.queue().exists(), "the queue is cleared once applied");
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_stop_from_the_notification_authors_an_edit() {
+        let root = std::env::temp_dir().join(format!("little-log-feed-timer-{}", now_millis()));
+        let paths = WidgetPaths::new(&root);
+        let started_at = now_millis() - 5 * 60_000;
+        let feed_id;
+
+        {
+            let repo = paths.open_repo().unwrap();
+            let baby_id = repo.ensure_baby("Baby").unwrap().id;
+            let key = repo.device_key().unwrap();
+            let mut clock = repo.clock(key.id()).unwrap();
+
+            let mut feed = Entry::new(EntryKind::Feed, started_at);
+            feed.baby_id = baby_id;
+            feed.feed.kind = Some(FeedKind::BreastLeft);
+            feed_id = repo.record_new_entry(&key, &mut clock, &feed).unwrap().id;
+        }
+
+        assert_eq!(running_feed_start(&paths).unwrap(), Some(started_at));
+        assert!(stop_feed(&paths).unwrap());
+        assert!(
+            !stop_feed(&paths).unwrap(),
+            "a second stop has nothing to do"
+        );
+
+        let repo = paths.open_repo().unwrap();
+        assert!(repo.running_feed().unwrap().is_none());
+        let events = repo.log().for_entry(&feed_id).unwrap();
+        assert_eq!(events.len(), 2, "start and stop are separate events");
+        assert_eq!(events[0].kind, EventKind::Create);
+        assert_eq!(events[1].kind, EventKind::Edit);
+        assert!(repo.entry(&feed_id).unwrap().unwrap().ended_at.is_some());
 
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -284,7 +388,7 @@ mod tests {
         let repo = paths.open_repo().unwrap();
         let entry = repo.entries().unwrap().into_iter().next().unwrap();
         assert_eq!(entry.kind, EntryKind::Feed);
-        assert_eq!(entry.feed_kind, Some(FeedKind::Bottle));
+        assert_eq!(entry.feed.kind, Some(FeedKind::Bottle));
 
         let _ = std::fs::remove_dir_all(&files_dir);
     }

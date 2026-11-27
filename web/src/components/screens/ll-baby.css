@@ -22,14 +22,16 @@
   place-items: center;
   width: 72px;
   height: 72px;
+  border: 2px solid var(--line);
   border-radius: 50%;
   overflow: hidden;
-  background: var(--feed);
+  background:
+    linear-gradient(150deg, var(--sheen), transparent 60%),
+    var(--feed);
   color: var(--on);
   font-family: var(--disp);
   font-size: 38px;
   line-height: 1;
-  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.22);
   cursor: pointer;
 }
 

@@ -94,7 +94,7 @@ mod tests {
     fn entry(updated_at: Millis) -> Entry {
         let mut entry = Entry::new(EntryKind::Feed, updated_at);
         entry.updated_at = updated_at;
-        entry.feed_kind = Some(FeedKind::Bottle);
+        entry.feed.kind = Some(FeedKind::Bottle);
         entry
     }
 
@@ -118,10 +118,10 @@ mod tests {
     fn ties_favour_the_incoming_row_so_retries_are_idempotent() {
         let local = entry(100);
         let mut incoming = entry(100);
-        incoming.amount = Some(120);
+        incoming.feed.amount = Some(120);
 
         let first = merge(Some(&local), &incoming).unwrap();
-        assert_eq!(first.amount, Some(120));
+        assert_eq!(first.feed.amount, Some(120));
 
         // Re-sending a byte-identical payload writes nothing at all.
         assert_eq!(merge(Some(&first), &incoming), None);

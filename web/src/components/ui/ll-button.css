@@ -11,11 +11,19 @@ ll-button {
   margin-top: 22px;
   padding: 22px;
   text-align: center;
-  border-radius: 28px;
-  background: var(--ink);
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, var(--sheen), transparent 58%),
+    var(--ink);
   color: var(--paper);
   font-family: var(--disp);
   font-size: 28px;
+  letter-spacing: 0.01em;
+}
+@media (hover: hover) {
+  .go:hover {
+    filter: brightness(1.06);
+  }
 }
 .go:active {
   transform: scale(0.98);

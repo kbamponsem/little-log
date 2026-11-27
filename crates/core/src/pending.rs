@@ -21,7 +21,11 @@ use crate::model::{DiaperType, Entry, EntryKind, FeedKind, Millis};
 use crate::repo::Repo;
 use crate::validate::now_millis;
 
-/// The six one-tap buttons on the home-screen widget.
+/// The actions the home-screen widget and launcher shortcuts can queue.
+///
+/// The detailed feed and diaper variants predate the widget's four-button
+/// layout and still back the launcher shortcuts. `Sleep` and `WakeUp` are the
+/// explicit button actions; `SleepToggle` remains for the combined shortcut.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WidgetAction {
@@ -32,6 +36,10 @@ pub enum WidgetAction {
     Poop,
     /// Start a sleep, or wake the baby up if one is running.
     SleepToggle,
+    /// Start a sleep; a tap while one is running changes nothing.
+    Sleep,
+    /// End the running sleep; a tap while none is running changes nothing.
+    WakeUp,
 }
 
 impl WidgetAction {
@@ -44,6 +52,8 @@ impl WidgetAction {
             WidgetAction::Pee => "pee",
             WidgetAction::Poop => "poop",
             WidgetAction::SleepToggle => "sleep_toggle",
+            WidgetAction::Sleep => "sleep",
+            WidgetAction::WakeUp => "wake_up",
         }
     }
 
@@ -55,6 +65,8 @@ impl WidgetAction {
             "pee" => Ok(WidgetAction::Pee),
             "poop" => Ok(WidgetAction::Poop),
             "sleep_toggle" => Ok(WidgetAction::SleepToggle),
+            "sleep" => Ok(WidgetAction::Sleep),
+            "wake_up" => Ok(WidgetAction::WakeUp),
             other => Err(CoreError::UnknownEnum {
                 enum_name: "WidgetAction",
                 value: other.to_string(),
@@ -196,7 +208,7 @@ fn apply(
     let mut entry = match pending.action {
         WidgetAction::BreastLeft | WidgetAction::BreastRight | WidgetAction::Bottle => {
             let mut entry = Entry::new(EntryKind::Feed, occurred_at);
-            entry.feed_kind = Some(match pending.action {
+            entry.feed.kind = Some(match pending.action {
                 WidgetAction::BreastLeft => FeedKind::BreastLeft,
                 WidgetAction::BreastRight => FeedKind::BreastRight,
                 _ => FeedKind::Bottle,
@@ -207,12 +219,27 @@ fn apply(
         }
         WidgetAction::Pee | WidgetAction::Poop => {
             let mut entry = Entry::new(EntryKind::Diaper, occurred_at);
-            entry.diaper_type = Some(match pending.action {
+            entry.diaper.kind = Some(match pending.action {
                 WidgetAction::Pee => DiaperType::Pee,
                 _ => DiaperType::Poop,
             });
             entry
         }
+        WidgetAction::Sleep => match repo.running_sleep()? {
+            // A second Sleep tap must not open a second sleep.
+            Some(_) => return Ok(false),
+            None => Entry::new(EntryKind::Sleep, occurred_at),
+        },
+        WidgetAction::WakeUp => match repo.running_sleep()? {
+            Some(running) => {
+                is_new = false;
+                let mut entry = running;
+                entry.ended_at = Some(occurred_at.max(entry.occurred_at + 60_000));
+                entry
+            }
+            // Nothing to wake; a stale or repeated tap is harmless.
+            None => return Ok(false),
+        },
         WidgetAction::SleepToggle => match repo.running_sleep()? {
             Some(running) => {
                 is_new = false;
@@ -390,14 +417,14 @@ mod tests {
             assert_eq!(entry.baby_id, baby.id);
             assert_eq!(entry.caregiver_id.as_deref(), Some("caregiver-1"));
             // No amount, no attributes: a single tap knows nothing more.
-            assert_eq!(entry.amount, None);
-            assert_eq!(entry.pee_shade, None);
-            assert_eq!(entry.poop_color, None);
+            assert_eq!(entry.feed.amount, None);
+            assert_eq!(entry.diaper.pee_shade, None);
+            assert_eq!(entry.diaper.poop_color, None);
         }
         let feeds: Vec<Option<FeedKind>> = entries
             .iter()
             .filter(|entry| entry.kind == EntryKind::Feed)
-            .map(|entry| entry.feed_kind)
+            .map(|entry| entry.feed.kind)
             .collect();
         assert_eq!(
             feeds,
@@ -410,7 +437,7 @@ mod tests {
         let diapers: Vec<Option<DiaperType>> = entries
             .iter()
             .filter(|entry| entry.kind == EntryKind::Diaper)
-            .map(|entry| entry.diaper_type)
+            .map(|entry| entry.diaper.kind)
             .collect();
         assert_eq!(diapers.len(), 2);
     }
@@ -443,6 +470,42 @@ mod tests {
         assert_eq!(sleeps.len(), 1);
         assert_eq!(sleeps[0].ended_at, Some(5_000 + 40 * 60_000));
         assert_eq!(sleeps[0].duration_ms(0), 40 * 60_000);
+    }
+
+    #[test]
+    fn explicit_sleep_and_wake_actions_are_idempotent() {
+        let path = temp_queue("sleep-actions");
+        let repo = Repo::open_in_memory().unwrap();
+
+        // Waking when nothing is running logs nothing.
+        append(&path, PendingAction::new(WidgetAction::WakeUp, 1_000)).unwrap();
+        let report = drain_into(&path, &repo, None).unwrap();
+        assert_eq!(report.applied, 0);
+        assert_eq!(repo.count_entries().unwrap(), 0);
+
+        // Sleep starts one; a repeated Sleep tap does not open a second.
+        append(&path, PendingAction::new(WidgetAction::Sleep, 5_000)).unwrap();
+        assert_eq!(drain_into(&path, &repo, None).unwrap().applied, 1);
+        append(&path, PendingAction::new(WidgetAction::Sleep, 6_000)).unwrap();
+        assert_eq!(drain_into(&path, &repo, None).unwrap().applied, 0);
+        assert_eq!(repo.count_entries().unwrap(), 1);
+        assert_eq!(repo.running_sleep().unwrap().unwrap().occurred_at, 5_000);
+
+        // WakeUp ends it, and a repeated WakeUp changes nothing.
+        append(&path, PendingAction::new(WidgetAction::WakeUp, 40 * 60_000)).unwrap();
+        assert_eq!(drain_into(&path, &repo, None).unwrap().applied, 1);
+        assert!(repo.running_sleep().unwrap().is_none());
+        append(&path, PendingAction::new(WidgetAction::WakeUp, 41 * 60_000)).unwrap();
+        assert_eq!(drain_into(&path, &repo, None).unwrap().applied, 0);
+
+        let sleeps: Vec<Entry> = repo
+            .entries()
+            .unwrap()
+            .into_iter()
+            .filter(|entry| entry.kind == EntryKind::Sleep)
+            .collect();
+        assert_eq!(sleeps.len(), 1);
+        assert_eq!(sleeps[0].ended_at, Some(40 * 60_000));
     }
 
     #[test]
@@ -508,15 +571,15 @@ mod tests {
         let baby_id = repo.ensure_baby("Ada").unwrap().id;
 
         let mut feed = Entry::new(EntryKind::Feed, now - 30 * 60_000);
-        feed.feed_kind = Some(FeedKind::Bottle);
+        feed.feed.kind = Some(FeedKind::Bottle);
         feed.baby_id = baby_id.clone();
         repo.force_entry(&feed).unwrap();
         let mut yesterday = Entry::new(EntryKind::Feed, now - day);
-        yesterday.feed_kind = Some(FeedKind::Bottle);
+        yesterday.feed.kind = Some(FeedKind::Bottle);
         yesterday.baby_id = baby_id.clone();
         repo.force_entry(&yesterday).unwrap();
         let mut diaper = Entry::new(EntryKind::Diaper, now - 60 * 60_000);
-        diaper.diaper_type = Some(DiaperType::Pee);
+        diaper.diaper.kind = Some(DiaperType::Pee);
         diaper.baby_id = baby_id.clone();
         repo.force_entry(&diaper).unwrap();
         let mut sleep = Entry::new(EntryKind::Sleep, now - 42 * 60_000);
@@ -559,12 +622,12 @@ mod tests {
             .unwrap();
 
         let mut ada_feed = Entry::new(EntryKind::Feed, now - 10 * 60_000);
-        ada_feed.feed_kind = Some(FeedKind::Bottle);
+        ada_feed.feed.kind = Some(FeedKind::Bottle);
         ada_feed.baby_id = ada.id.clone();
         repo.force_entry(&ada_feed).unwrap();
 
         let mut bo_feed = Entry::new(EntryKind::Feed, now - 5 * 60_000);
-        bo_feed.feed_kind = Some(FeedKind::Bottle);
+        bo_feed.feed.kind = Some(FeedKind::Bottle);
         bo_feed.baby_id = bo.id.clone();
         repo.force_entry(&bo_feed).unwrap();
 

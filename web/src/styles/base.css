@@ -18,7 +18,9 @@ body {
   height: 100%;
   overflow: hidden;
   overscroll-behavior: none;
-  background: var(--bg);
+  background:
+    radial-gradient(120% 55% at 50% -12%, var(--bg-glow), transparent 70%),
+    var(--bg);
   color: var(--ink);
   font-family: var(--body);
   font-size: 17px;
@@ -49,11 +51,22 @@ ll-settings {
   max-width: var(--content);
   margin: 0 auto;
   /* No top padding: a screen starts at the top of the shell, and the shell
-     already clears the status bar. */
+     already clears the status bar. The bottom padding is the room the floating
+     bar needs, so content can scroll under it and still end above it. */
   padding: 0 var(--gutter) var(--tabbar-room);
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+}
+
+/* Screens fill the shell; the bar floats over their last band of padding
+   rather than reserving a strip of the viewport for itself. */
+main,
+ll-today,
+ll-history,
+ll-trends,
+ll-baby {
+  bottom: 0;
 }
 
 /* Reading-width forms and lists look stretched at 1040px, so the settings

@@ -185,6 +185,24 @@ export class AppStore extends Observable<AppStore> {
     return this.entries.find((entry) => entry.kind === "sleep" && !entry.ended_at);
   }
 
+  /** The feed that is still running, if the baby is feeding. */
+  runningFeed(): Entry | undefined {
+    return this.entries.find((entry) => entry.kind === "feed" && !entry.ended_at);
+  }
+
+  /**
+   * Re-read only when a feed that this WebView thought was running has been
+   * stopped elsewhere — the notification action writes the event without
+   * telling the page. A full `refresh()` on a timer would re-render every
+   * screen once a second-ish for no change, so compare first.
+   */
+  async refreshIfFeedStopped(): Promise<void> {
+    if (!this.runningFeed()) return;
+    const entries = await this.repo.listEntries();
+    if (entries.some((entry) => entry.kind === "feed" && !entry.ended_at)) return;
+    this.setEntries(entries);
+  }
+
   lastOf(kind: EntryKind): Entry | undefined {
     return this.entries.find((entry) => entry.kind === kind);
   }

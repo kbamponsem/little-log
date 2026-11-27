@@ -29,7 +29,7 @@ ll-toast-host {
   color: var(--paper);
   font-weight: 600;
   text-align: center;
-  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.22);
+  box-shadow: var(--shadow-soft);
 }
 
 /* Deliberately not a token: "this went wrong" should look the same whatever

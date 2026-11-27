@@ -43,17 +43,21 @@
 .checkin {
   all: unset;
   box-sizing: border-box;
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
   width: 100%;
   margin: 0 0 14px;
-  padding: 16px 18px;
-  border-radius: 28px;
-  background: var(--paper);
+  padding: 14px 16px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background:
+    linear-gradient(145deg, var(--sheen), transparent 60%),
+    color-mix(in srgb, var(--mood) 16%, var(--paper));
   color: var(--ink);
-  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.18);
   font: inherit;
   text-align: left;
   cursor: pointer;
@@ -64,11 +68,10 @@
   outline-offset: 2px;
 }
 
-.checkin .chip {
-  flex: none;
-  min-height: 48px;
-  padding: 10px 16px;
-  pointer-events: none;
+@media (hover: hover) {
+  .checkin:hover {
+    filter: brightness(1.02);
+  }
 }
 
 .checkin-copy {
@@ -94,14 +97,27 @@
 }
 
 .checkin-icon {
-  display: flex;
+  display: grid;
+  place-items: center;
   flex: none;
+  width: 46px;
+  height: 46px;
+  border-radius: 15px;
+  background: color-mix(in srgb, var(--mood) 72%, transparent);
+  color: var(--on);
 }
 
 .checkin .chip {
   flex: none;
-  min-height: 48px;
+  min-height: 0;
   padding: 10px 16px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 14px;
+  font-weight: 600;
+  pointer-events: none;
 }
 
 .link {

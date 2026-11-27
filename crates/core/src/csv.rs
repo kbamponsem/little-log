@@ -67,9 +67,9 @@ mod tests {
     #[test]
     fn header_and_quoting_match_the_prototype() {
         let mut entry = Entry::new(EntryKind::Feed, 1_760_000_000_000);
-        entry.feed_kind = Some(FeedKind::Bottle);
-        entry.amount = Some(90);
-        entry.amount_unit = Some(AmountUnit::Milliliters);
+        entry.feed.kind = Some(FeedKind::Bottle);
+        entry.feed.amount = Some(90);
+        entry.feed.amount_unit = Some(AmountUnit::Milliliters);
         entry.note = Some("gulped it, then \"burped\"\nall over".to_string());
 
         let csv = export(&[entry], 1_760_000_000_000);
@@ -92,8 +92,8 @@ mod tests {
         let mut older = Entry::new(EntryKind::Sleep, 1_000);
         older.ended_at = Some(1_000 + 3_600_000);
         let mut newer = Entry::new(EntryKind::Diaper, 2_000);
-        newer.diaper_type = Some(DiaperType::Pee);
-        newer.pee_shade = Some(PeeShade::Pale);
+        newer.diaper.kind = Some(DiaperType::Pee);
+        newer.diaper.pee_shade = Some(PeeShade::Pale);
         let mut removed = Entry::new(EntryKind::Sleep, 3_000);
         removed.deleted = true;
 
@@ -122,12 +122,12 @@ mod tests {
     #[test]
     fn diaper_details_combine_pee_and_poop() {
         let mut entry = Entry::new(EntryKind::Diaper, 1_000);
-        entry.diaper_type = Some(DiaperType::Both);
-        entry.pee_shade = Some(PeeShade::Normal);
-        entry.pee_amount = Some(Amount::Large);
-        entry.poop_color = Some(PoopColor::Green);
-        entry.consistency = Some(Consistency::Runny);
-        entry.poop_amount = Some(Amount::Small);
+        entry.diaper.kind = Some(DiaperType::Both);
+        entry.diaper.pee_shade = Some(PeeShade::Normal);
+        entry.diaper.pee_amount = Some(Amount::Large);
+        entry.diaper.poop_color = Some(PoopColor::Green);
+        entry.diaper.consistency = Some(Consistency::Runny);
+        entry.diaper.poop_amount = Some(Amount::Small);
         assert_eq!(
             entry.details(1_000),
             "Pee: Normal · Large · Poop: Green, Runny, Small"

@@ -14,12 +14,15 @@ use crate::crypto::{DeviceKey, GroupKey};
 use crate::error::{CoreError, Result};
 use crate::keystore::{self, SqliteKeyStore};
 use crate::log::EventLog;
-use crate::model::{Baby, Caregiver, Entry, JoinState, Millis, MoodSchedule, Role, Theme};
+use crate::model::{
+    Baby, Caregiver, DiaperDetails, Entry, FeedDetails, JoinState, Millis, MoodSchedule, Role,
+    SleepDetails, Theme,
+};
 use crate::sync::{self, Cursor};
 use crate::validate::now_millis;
 
 /// Bumped whenever the schema below changes; see [`Repo::migrate`].
-pub const SCHEMA_VERSION: i64 = 11;
+pub const SCHEMA_VERSION: i64 = 13;
 
 const ENTRY_COLUMNS: &str = "id, baby_id, kind, occurred_at, ended_at, feed_kind, amount, \
      amount_unit, diaper_type, pee_shade, pee_amount, poop_color, consistency, poop_amount, \
@@ -229,6 +232,28 @@ ALTER TABLE device_settings ADD COLUMN mood_schedule_enabled INTEGER NOT NULL DE
 ALTER TABLE device_settings ADD COLUMN mood_schedule_minute INTEGER NOT NULL DEFAULT 1140;
 "#;
 
+/// Feeds became sessions in v12: before this, a feed was a point-in-time entry
+/// and never carried an end time. Left alone, every old feed would now look
+/// like it is still running, so pin those rows shut at their own timestamp.
+/// A real running feed is only created by the new start flow.
+const SCHEMA_V12: &str = r#"
+UPDATE entries SET ended_at = occurred_at WHERE kind = 'feed' AND ended_at IS NULL;
+"#;
+
+/// A pinned feed with no length reads as a zero-minute feed. Give it a
+/// plausible end instead: a breast feed in minutes is exactly as long as the
+/// minutes the parent recorded; anything measured in ml (or with no amount)
+/// gets a typical ten minutes. The start time is the real one, only the end is
+/// estimated for old rows.
+const SCHEMA_V13: &str = r#"
+UPDATE entries
+   SET ended_at = occurred_at + CASE
+     WHEN amount_unit = 'min' AND amount > 0 THEN amount * 60000
+     ELSE 600000
+   END
+ WHERE kind = 'feed' AND ended_at = occurred_at;
+"#;
+
 /// An invite link waiting to be redeemed.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Invite {
@@ -345,6 +370,12 @@ impl Repo {
         }
         if version < 11 {
             self.conn.execute_batch(SCHEMA_V11)?;
+        }
+        if version < 12 {
+            self.conn.execute_batch(SCHEMA_V12)?;
+        }
+        if version < 13 {
+            self.conn.execute_batch(SCHEMA_V13)?;
         }
         if version < SCHEMA_VERSION {
             self.conn
@@ -905,17 +936,17 @@ impl Repo {
                 entry.kind.as_str(),
                 entry.occurred_at,
                 entry.ended_at,
-                entry.feed_kind.map(|k| k.as_str()),
-                entry.amount,
-                entry.amount_unit.map(|u| u.as_str()),
-                entry.diaper_type.map(|t| t.as_str()),
-                entry.pee_shade.map(|s| s.as_str()),
-                entry.pee_amount.map(|a| a.as_str()),
-                entry.poop_color.map(|c| c.as_str()),
-                entry.consistency.map(|c| c.as_str()),
-                entry.poop_amount.map(|a| a.as_str()),
-                entry.sleep_location.map(|l| l.as_str()),
-                entry.wake_mood.map(|m| m.as_str()),
+                entry.feed.kind.map(|k| k.as_str()),
+                entry.feed.amount,
+                entry.feed.amount_unit.map(|u| u.as_str()),
+                entry.diaper.kind.map(|t| t.as_str()),
+                entry.diaper.pee_shade.map(|s| s.as_str()),
+                entry.diaper.pee_amount.map(|a| a.as_str()),
+                entry.diaper.poop_color.map(|c| c.as_str()),
+                entry.diaper.consistency.map(|c| c.as_str()),
+                entry.diaper.poop_amount.map(|a| a.as_str()),
+                entry.sleep.location.map(|l| l.as_str()),
+                entry.sleep.wake_mood.map(|m| m.as_str()),
                 entry.note,
                 entry.photo,
                 entry.caregiver_id,
@@ -946,6 +977,32 @@ impl Repo {
         let sql = format!(
             "SELECT {ENTRY_COLUMNS} FROM entries
               WHERE kind = 'sleep' AND ended_at IS NULL AND deleted = 0 AND baby_id = ?1
+              ORDER BY occurred_at DESC LIMIT 1"
+        );
+        self.conn
+            .query_row(&sql, params![baby_id], entry_from_row)
+            .optional()
+            .map_err(CoreError::from)
+    }
+
+    /// The feed that is still running, if the baby is feeding.
+    pub fn running_feed(&self) -> Result<Option<Entry>> {
+        let sql = format!(
+            "SELECT {ENTRY_COLUMNS} FROM entries
+              WHERE kind = 'feed' AND ended_at IS NULL AND deleted = 0
+              ORDER BY occurred_at DESC LIMIT 1"
+        );
+        self.conn
+            .query_row(&sql, [], entry_from_row)
+            .optional()
+            .map_err(CoreError::from)
+    }
+
+    /// The feed that is still running for one baby, if that baby is feeding.
+    pub fn running_feed_for(&self, baby_id: &str) -> Result<Option<Entry>> {
+        let sql = format!(
+            "SELECT {ENTRY_COLUMNS} FROM entries
+              WHERE kind = 'feed' AND ended_at IS NULL AND deleted = 0 AND baby_id = ?1
               ORDER BY occurred_at DESC LIMIT 1"
         );
         self.conn
@@ -1284,17 +1341,23 @@ fn entry_from_row(row: &Row<'_>) -> rusqlite::Result<Entry> {
         kind: parse_req(row.get::<_, String>(2)?, 2)?,
         occurred_at: row.get(3)?,
         ended_at: row.get(4)?,
-        feed_kind: parse_opt(row.get(5)?, 5)?,
-        amount: row.get(6)?,
-        amount_unit: parse_opt(row.get(7)?, 7)?,
-        diaper_type: parse_opt(row.get(8)?, 8)?,
-        pee_shade: parse_opt(row.get(9)?, 9)?,
-        pee_amount: parse_opt(row.get(10)?, 10)?,
-        poop_color: parse_opt(row.get(11)?, 11)?,
-        consistency: parse_opt(row.get(12)?, 12)?,
-        poop_amount: parse_opt(row.get(13)?, 13)?,
-        sleep_location: parse_opt(row.get(14)?, 14)?,
-        wake_mood: parse_opt(row.get(15)?, 15)?,
+        feed: FeedDetails {
+            kind: parse_opt(row.get(5)?, 5)?,
+            amount: row.get(6)?,
+            amount_unit: parse_opt(row.get(7)?, 7)?,
+        },
+        diaper: DiaperDetails {
+            kind: parse_opt(row.get(8)?, 8)?,
+            pee_shade: parse_opt(row.get(9)?, 9)?,
+            pee_amount: parse_opt(row.get(10)?, 10)?,
+            poop_color: parse_opt(row.get(11)?, 11)?,
+            consistency: parse_opt(row.get(12)?, 12)?,
+            poop_amount: parse_opt(row.get(13)?, 13)?,
+        },
+        sleep: SleepDetails {
+            location: parse_opt(row.get(14)?, 14)?,
+            wake_mood: parse_opt(row.get(15)?, 15)?,
+        },
         note: row.get(16)?,
         photo: row.get(17)?,
         caregiver_id: row.get(18)?,

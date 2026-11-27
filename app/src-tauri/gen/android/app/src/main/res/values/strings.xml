@@ -2,7 +2,7 @@
     <string name="app_name">"Little Log"</string>
     <string name="main_activity_title">"Little Log"</string>
     <string name="widget_label">"Little Log"</string>
-    <string name="widget_description">"Log a feed, sleep or diaper in one tap."</string>
+    <string name="widget_description">"Log feeds, diapers and sleep from your home screen."</string>
     <!-- Launcher shortcuts: the same actions as the widget buttons. -->
     <string name="shortcut_left_short">"Left"</string>
     <string name="shortcut_left_long">"Log a feed on the left"</string>

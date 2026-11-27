@@ -44,6 +44,15 @@ export function dur(ms: number): string {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
+/** 0:03:07 — a running clock, hours included so minutes and seconds read apart. */
+export function clock(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
 /** just now / 12 min ago / 1h 20m ago */
 export function ago(time: number): string {
   const minutes = Math.round((Date.now() - time) / 60000);
@@ -101,7 +110,11 @@ export function entryDetail(entry: Entry): string {
     return extras ? `${times} · ${extras}` : times;
   }
   if (entry.kind === "feed") {
-    return entry.amount ? `${entry.amount} ${entry.amount_unit}` : "";
+    if (entry.amount) return `${entry.amount} ${entry.amount_unit}`;
+    if (entry.ended_at && entry.ended_at > entry.occurred_at) {
+      return dur(entry.ended_at - entry.occurred_at);
+    }
+    return entry.ended_at ? "" : "feeding now";
   }
   if (entry.kind === "mood") return "";
   const parts: string[] = [];
@@ -135,5 +148,11 @@ export function entryWhat(entry: Entry): string {
 /** CSV "details" column — duration for sleep, amount/attributes otherwise. */
 export function entryCsvDetails(entry: Entry): string {
   if (entry.kind === "sleep") return dur(sleepMs(entry));
+  if (entry.kind === "feed") {
+    if (entry.amount) return `${entry.amount} ${entry.amount_unit}`;
+    return entry.ended_at && entry.ended_at > entry.occurred_at
+      ? dur(entry.ended_at - entry.occurred_at)
+      : "";
+  }
   return entryDetail(entry);
 }
