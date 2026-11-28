@@ -40,7 +40,7 @@ data class TimerSpec(
     val entryId: String = "",
     /** Second row: the feed side, or a short hint to open the app. */
     val contentText: String = "Tap to open",
-    /** Feed only: flip breast left/right without stopping the timer. */
+    /** Feed only: close this side's segment and open the other side. */
     val switchSideLabel: String? = null,
     val switchSide: PendingIntent? = null,
 )

@@ -8,7 +8,7 @@
 use std::path::{Path, PathBuf};
 
 #[cfg(any(target_os = "android", test))]
-use little_log_core::model::{EntryKind, FeedKind};
+use little_log_core::model::{Entry, EntryKind, FeedKind};
 use little_log_core::pending::{self, DrainReport, WidgetState};
 #[cfg(any(target_os = "android", test))]
 use little_log_core::timer::{active_timers, TimerKind};
@@ -185,10 +185,15 @@ pub fn stop_timer_entry(paths: &WidgetPaths, entry_id: &str) -> Result<bool> {
     Ok(true)
 }
 
-/// Flip a running breast feed to the other side, as an edit event.
+/// Switch a running breast feed to the other side.
 ///
-/// Bottles, solids, ended entries and sleep have no side, so this is a no-op
-/// for them; the notification only offers the action for breast feeds.
+/// The parent sees one continuous feed, but the log keeps both halves: the
+/// current entry is closed at the switch instant and a new open entry starts on
+/// the other side at that same instant. That way neither side's duration is
+/// lost, and each half is an ordinary entry that replicates like any other.
+///
+/// Bottles, solids, ended entries and sleep have no side, so this is a no-op for
+/// them; the notification only offers the action for breast feeds.
 #[cfg(any(target_os = "android", test))]
 pub fn switch_feed_side(paths: &WidgetPaths, entry_id: &str) -> Result<bool> {
     let repo = paths.open_repo()?;
@@ -203,11 +208,34 @@ pub fn switch_feed_side(paths: &WidgetPaths, entry_id: &str) -> Result<bool> {
         Some(FeedKind::BreastRight) => FeedKind::BreastLeft,
         _ => return Ok(false),
     };
-    entry.feed.kind = Some(next);
-    entry.updated_at = now_millis();
+    // A legacy open feed may have no child. Attribute both halves to the child
+    // this device is looking at, or there is no topic to author the event under.
+    let Some(baby_id) = entry
+        .baby_id
+        .clone()
+        .or_else(|| repo.current_baby().ok().flatten().and_then(|baby| baby.id))
+    else {
+        return Ok(false);
+    };
+
     let key = repo.device_key()?;
     let mut clock = repo.clock(key.id())?;
+    let now = now_millis();
+    // Both halves meet at one instant: no gap, no overlap. Clamp like a stop so
+    // a feed switched in the same millisecond still produces valid rows.
+    let switched_at = now.max(entry.occurred_at + 1);
+
+    entry.baby_id = Some(baby_id.clone());
+    entry.ended_at = Some(switched_at);
+    entry.updated_at = now;
     repo.record_new_entry(&key, &mut clock, &entry)?;
+
+    let mut next_feed = Entry::new(EntryKind::Feed, switched_at);
+    next_feed.baby_id = Some(baby_id);
+    next_feed.feed.kind = Some(next);
+    next_feed.caregiver_id = entry.caregiver_id;
+    next_feed.updated_at = now;
+    repo.record_new_entry(&key, &mut clock, &next_feed)?;
     Ok(true)
 }
 
@@ -421,7 +449,8 @@ mod android {
         jboolean::from(stop_timer_entry(&paths, &entry).unwrap_or(false))
     }
 
-    /// Flip a running breast feed to the other side. Returns whether it changed.
+    /// Switch a running breast feed to the other side by closing this half and
+    /// opening a new entry. Returns whether it changed.
     #[no_mangle]
     pub extern "system" fn Java_app_littlelog_timer_TimerBridge_nativeSwitchFeedSide(
         mut env: JNIEnv,
@@ -540,37 +569,74 @@ mod tests {
     }
 
     #[test]
-    fn switching_side_authors_an_edit_and_keeps_the_entry_open() {
+    fn switching_side_closes_the_first_half_and_opens_the_other() {
         let root = std::env::temp_dir().join(format!("little-log-switch-{}", now_millis()));
         let paths = WidgetPaths::new(&root);
-        let feed_id;
+        let baby_id;
+        let started_at = now_millis() - 3 * 60_000;
+        let first_id;
 
         {
             let repo = paths.open_repo().unwrap();
-            let baby_id = repo.ensure_baby("Ada").unwrap().id;
+            baby_id = repo.ensure_baby("Ada").unwrap().id.unwrap();
             let key = repo.device_key().unwrap();
             let mut clock = repo.clock(key.id()).unwrap();
-            let mut feed = Entry::new(EntryKind::Feed, now_millis() - 3 * 60_000);
-            feed.baby_id = baby_id;
+            let mut feed = Entry::new(EntryKind::Feed, started_at);
+            feed.baby_id = Some(baby_id.clone());
             feed.feed.kind = Some(FeedKind::BreastLeft);
-            feed_id = repo.record_new_entry(&key, &mut clock, &feed).unwrap().id;
+            feed.note = Some("Left first".into());
+            first_id = repo.record_new_entry(&key, &mut clock, &feed).unwrap().id;
         }
 
-        assert!(switch_feed_side(&paths, &feed_id).unwrap());
-        assert!(switch_feed_side(&paths, &feed_id).unwrap());
+        assert!(switch_feed_side(&paths, &first_id).unwrap());
+        // The old entry is closed now; a repeated tap must not split it again.
+        assert!(!switch_feed_side(&paths, &first_id).unwrap());
 
         let repo = paths.open_repo().unwrap();
-        let stored = repo.entry(&feed_id).unwrap().unwrap();
-        assert_eq!(stored.feed.kind, Some(FeedKind::BreastLeft));
-        assert!(
-            stored.ended_at.is_none(),
-            "switching does not stop the feed"
-        );
+        let first = repo.entry(&first_id).unwrap().unwrap();
+        let switched_at = first.ended_at.expect("the first half is closed");
+        assert_eq!(first.feed.kind, Some(FeedKind::BreastLeft));
+        assert_eq!(first.duration_ms(switched_at), switched_at - started_at);
         assert_eq!(
-            repo.log().for_entry(&feed_id).unwrap().len(),
-            3,
-            "start plus two switches are events"
+            repo.log().for_entry(&first_id).unwrap().len(),
+            2,
+            "start and close are the first half's events"
         );
+
+        let second = repo
+            .running_feed()
+            .unwrap()
+            .expect("the other side is open");
+        assert_ne!(second.id, first_id);
+        assert_eq!(second.baby_id.as_deref(), Some(baby_id.as_str()));
+        assert_eq!(second.feed.kind, Some(FeedKind::BreastRight));
+        assert_eq!(
+            second.occurred_at, switched_at,
+            "the halves meet with no gap or overlap"
+        );
+        assert_eq!(second.note, None, "the first half's note is not duplicated");
+        assert_eq!(
+            repo.log().for_entry(&second.id).unwrap().len(),
+            1,
+            "the second half starts with a create event"
+        );
+
+        // The notification follows the new open entry.
+        assert_eq!(
+            active_timers(&repo).unwrap()[0].entry_id,
+            second.id,
+            "one running timer, on the new side"
+        );
+
+        // Switching again closes the second half and opens a third on the left.
+        assert!(switch_feed_side(&paths, &second.id).unwrap());
+        let third = repo.running_feed().unwrap().unwrap();
+        assert_eq!(third.feed.kind, Some(FeedKind::BreastLeft));
+        assert_eq!(
+            third.occurred_at,
+            repo.entry(&second.id).unwrap().unwrap().ended_at.unwrap()
+        );
+        assert_eq!(repo.count_entries().unwrap(), 3, "one row per half");
 
         // A bottle has no side to switch, and sleep is not a feed.
         assert!(!switch_feed_side(&paths, "missing").unwrap());
