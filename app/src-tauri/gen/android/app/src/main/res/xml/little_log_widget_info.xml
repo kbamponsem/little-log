@@ -1,14 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Home-screen widget: 4x3 with the Little Log header above four big actions.
-     Feed and Diaper open the app on their sheet; Sleep and Wake Up log in the
-     background without launching the app. A tap anywhere else opens it. -->
+<!-- Home-screen widget: 4x2 with the Little Log header above one row of four
+     actions. Feed and Diaper open the app on their sheet; Sleep and Wake Up log
+     in the background without launching the app. A tap anywhere else opens it.
+     Four buttons need one row, so the old 4x3 default left a dead third row. -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/widget_description"
     android:initialLayout="@layout/glance_default_loading_layout"
     android:minWidth="250dp"
-    android:minHeight="170dp"
+    android:minHeight="110dp"
     android:resizeMode="horizontal|vertical"
     android:targetCellWidth="4"
-    android:targetCellHeight="3"
+    android:targetCellHeight="2"
     android:updatePeriodMillis="1800000"
     android:widgetCategory="home_screen" />

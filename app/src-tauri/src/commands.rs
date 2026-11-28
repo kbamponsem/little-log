@@ -8,11 +8,13 @@
 use base64::Engine;
 use little_log_core::model::{Baby, Caregiver, Entry, JoinState, MoodSchedule, Role, Theme};
 use little_log_core::repo::JoinRequest;
-use little_log_core::{csv, invite, photo, validate, CoreError};
+use little_log_core::timer::{active_timers, TimerKind};
+use little_log_core::{csv, invite, photo, validate, CoreError, Repo};
 use serde::Serialize;
 use tauri::State;
 
 use crate::sync::SyncStatus;
+use crate::timer_notification;
 use crate::widget;
 use crate::AppState;
 
@@ -21,6 +23,62 @@ type CmdResult<T> = Result<T, String>;
 
 fn fail(error: CoreError) -> String {
     error.to_string()
+}
+
+/// Keep the Android timer notification in step with one saved entry.
+///
+/// The entry is the source of truth: this only mirrors it. `was_open` lets a
+/// new timer become `startTimer` and a later write become `updateTimer`, so the
+/// Kotlin side never has to guess which one it is.
+fn notify_timer(app: &tauri::AppHandle, repo: &Repo, stored: &Entry, previous: Option<&Entry>) {
+    let Some(kind) = TimerKind::of_entry(stored.kind) else {
+        return;
+    };
+    let previous_kind = previous.and_then(|old| TimerKind::of_entry(old.kind));
+    let was_open = previous.is_some_and(|old| {
+        old.ended_at.is_none() && !old.deleted && TimerKind::of_entry(old.kind).is_some()
+    });
+
+    // Moving a running entry to another child (or changing its kind) leaves the
+    // old notification behind otherwise; one notification per baby and kind.
+    if let Some(old) = previous.filter(|old| {
+        old.ended_at.is_none()
+            && !old.deleted
+            && (old.baby_id != stored.baby_id || previous_kind != Some(kind))
+    }) {
+        if let Some(old_kind) = previous_kind {
+            if let Err(error) =
+                timer_notification::stop(app, old_kind, old.baby_id.as_deref(), Some(&old.id))
+            {
+                eprintln!("timer notification: {error}");
+            }
+        }
+    }
+
+    let open = stored.ended_at.is_none() && !stored.deleted;
+    let result = match (was_open, open) {
+        // A newly started timer.
+        (false, true) => active_timers(repo)
+            .ok()
+            .and_then(|timers| timers.into_iter().find(|timer| timer.entry_id == stored.id))
+            .map_or(Ok(()), |timer| timer_notification::start(app, &timer)),
+        // An edit to the timer that is already showing.
+        (true, true) => active_timers(repo)
+            .ok()
+            .and_then(|timers| timers.into_iter().find(|timer| timer.entry_id == stored.id))
+            .map_or(Ok(()), |timer| timer_notification::update(app, &timer)),
+        // It was running and is now stopped, deleted or replaced.
+        (true, false) => {
+            timer_notification::stop(app, kind, stored.baby_id.as_deref(), Some(&stored.id))
+        }
+        // Logging a feed that was already finished does not touch a different
+        // running timer for the same child.
+        (false, false) => Ok(()),
+    };
+    if let Err(error) = result {
+        // Never let a notification failure turn a saved feed into an error.
+        eprintln!("timer notification: {error}");
+    }
 }
 
 /// What `device_identity` hands the frontend: this device's id.
@@ -101,7 +159,11 @@ pub fn list_entries(state: State<'_, AppState>) -> CmdResult<Vec<Entry>> {
 /// makes what this device shows and what a peer receives the same thing by
 /// construction.
 #[tauri::command]
-pub fn save_entry(state: State<'_, AppState>, entry: Entry) -> CmdResult<Entry> {
+pub fn save_entry(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    entry: Entry,
+) -> CmdResult<Entry> {
     let mut entry = entry;
 
     // Carry the photo in the event: a peer has no access to this device's
@@ -123,9 +185,11 @@ pub fn save_entry(state: State<'_, AppState>, entry: Entry) -> CmdResult<Entry> 
     // Seeded from the log's newest head, so a restart cannot author a write that
     // sorts before something already stored.
     let mut clock = repo.clock(key.id()).map_err(fail)?;
+    let previous = repo.entry(&entry.id).map_err(fail)?;
     let stored = repo
         .record_new_entry_with_photo(&key, &mut clock, &entry, photo.as_deref())
         .map_err(fail)?;
+    notify_timer(&app, &repo, &stored, previous.as_ref());
     drop(repo);
 
     // A round is a catch-up, not something the parent waits on.
@@ -135,8 +199,13 @@ pub fn save_entry(state: State<'_, AppState>, entry: Entry) -> CmdResult<Entry> 
 
 /// Tombstone one entry, as an event, so other devices converge on the delete.
 #[tauri::command]
-pub fn delete_entry(state: State<'_, AppState>, entry_id: String) -> CmdResult<Entry> {
+pub fn delete_entry(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    entry_id: String,
+) -> CmdResult<Entry> {
     let repo = state.repo();
+    let old = repo.entry(&entry_id).map_err(fail)?;
     let key = repo.device_key().map_err(fail)?;
     let mut clock = repo.clock(key.id()).map_err(fail)?;
     repo.record_delete(&key, &mut clock, &entry_id)
@@ -145,6 +214,18 @@ pub fn delete_entry(state: State<'_, AppState>, entry_id: String) -> CmdResult<E
         .entry(&entry_id)
         .map_err(fail)?
         .ok_or_else(|| CoreError::NotFound(entry_id.clone()).to_string())?;
+    if let Some(old) = old
+        .as_ref()
+        .filter(|old| old.ended_at.is_none() && !old.deleted)
+    {
+        if let Some(kind) = TimerKind::of_entry(old.kind) {
+            if let Err(error) =
+                timer_notification::stop(&app, kind, old.baby_id.as_deref(), Some(&old.id))
+            {
+                eprintln!("timer notification: {error}");
+            }
+        }
+    }
     drop(repo);
 
     state.sync_in_background();
@@ -189,7 +270,7 @@ pub fn create_baby(state: State<'_, AppState>, name: String, born: String) -> Cm
 /// Save a child's name, birthday and picture as a profile write, so the change
 /// reaches the other devices rather than only this one's row.
 #[tauri::command]
-pub fn save_baby(state: State<'_, AppState>, baby: Baby) -> CmdResult<Baby> {
+pub fn save_baby(state: State<'_, AppState>, app: tauri::AppHandle, baby: Baby) -> CmdResult<Baby> {
     // Carry the picture in the event, like an entry's photo: a peer has no
     // access to this device's photos/ directory. Read it before the repo lock.
     let photo = match (baby.id.as_deref(), baby.photo.as_deref()) {
@@ -202,14 +283,27 @@ pub fn save_baby(state: State<'_, AppState>, baby: Baby) -> CmdResult<Baby> {
     let repo = state.repo();
     let key = repo.device_key().map_err(fail)?;
     let mut clock = repo.clock(key.id()).map_err(fail)?;
-    repo.save_profile_with_photo(&key, &mut clock, &baby, photo.as_deref())
-        .map_err(fail)
+    let stored = repo
+        .save_profile_with_photo(&key, &mut clock, &baby, photo.as_deref())
+        .map_err(fail)?;
+    drop(repo);
+    // A renamed child changes the timer title; a picture does not, but syncing
+    // the whole set is cheap and keeps the two paths from drifting.
+    state.sync_timer_notifications(&app);
+    Ok(stored)
 }
 
 /// Point this device at a child. Local only: it changes nobody else's view.
 #[tauri::command]
-pub fn set_current_baby(state: State<'_, AppState>, baby_id: String) -> CmdResult<()> {
-    state.repo().set_current_baby(&baby_id).map_err(fail)
+pub fn set_current_baby(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    baby_id: String,
+) -> CmdResult<()> {
+    state.repo().set_current_baby(&baby_id).map_err(fail)?;
+    // A legacy entry with no child takes its name from the current child.
+    state.sync_timer_notifications(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -384,14 +478,17 @@ pub fn export_csv(state: State<'_, AppState>) -> CmdResult<String> {
 
 /// Soft-delete everything (tombstones), so other devices empty out too.
 #[tauri::command]
-pub fn delete_all(state: State<'_, AppState>) -> CmdResult<usize> {
+pub fn delete_all(state: State<'_, AppState>, app: tauri::AppHandle) -> CmdResult<usize> {
     let author = state
         .repo()
         .caregivers()
         .map_err(fail)?
         .first()
         .and_then(|caregiver| caregiver.id.clone());
-    state.repo().delete_all(author.as_deref()).map_err(fail)
+    let deleted = state.repo().delete_all(author.as_deref()).map_err(fail)?;
+    // "Delete everything" also ends every running timer.
+    state.sync_timer_notifications(&app);
+    Ok(deleted)
 }
 
 /* ----------------------------------------------------------------- photos */

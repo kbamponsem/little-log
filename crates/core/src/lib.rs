@@ -20,6 +20,7 @@ pub mod projection;
 pub mod record;
 pub mod repo;
 pub mod sync;
+pub mod timer;
 pub mod validate;
 
 pub use clock::{Clock, Hlc};
@@ -35,6 +36,7 @@ pub use model::{
 pub use payload::EntryPayload;
 pub use pending::{DrainReport, PendingAction, WidgetAction, WidgetState};
 pub use repo::Repo;
+pub use timer::{active_timers, ActiveTimer, TimerKind};
 
 /// Serialise/de-serialise a boolean as `true`/`false` or `0`/`1`, so a value
 /// written by SQLite, the frontend or an older build all read the same way.

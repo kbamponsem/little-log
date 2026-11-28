@@ -14,6 +14,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use little_log_core::timer::active_timers;
 use little_log_core::validate::now_millis;
 use little_log_core::{CoreError, Repo};
 use little_log_sync::{
@@ -22,6 +23,8 @@ use little_log_sync::{
 };
 use serde::Serialize;
 use tokio::runtime::Runtime;
+
+use crate::timer_notification;
 
 /// How one peer's last attempt went.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
@@ -95,6 +98,9 @@ pub struct SyncService {
     runtime: Runtime,
     endpoint: Endpoint,
     database: PathBuf,
+    /// Used to refresh the Android timer notifications when a round changes the
+    /// open entries (a timer started or stopped on another device).
+    app: tauri::AppHandle,
     /// Shared with the background rounds and read by the Settings screen.
     status: Arc<Mutex<SyncStatus>>,
     /// Held so the accept loop lives as long as the service does.
@@ -106,7 +112,11 @@ impl SyncService {
     ///
     /// `secret` is the device key: the same key that signs events, handed to
     /// iroh so a peer's identity *is* the identity on its events.
-    pub fn start(secret: [u8; 32], database: PathBuf) -> Result<Self, CoreError> {
+    pub fn start(
+        secret: [u8; 32],
+        database: PathBuf,
+        app: tauri::AppHandle,
+    ) -> Result<Self, CoreError> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .enable_all()
@@ -130,9 +140,27 @@ impl SyncService {
             runtime,
             endpoint,
             database,
+            app,
             status: Arc::new(Mutex::new(SyncStatus::default())),
             _router: router,
         })
+    }
+
+    /// Mirror the open entries onto the Android timer notifications.
+    ///
+    /// A sync round can start or stop a timer on the other device, so the set
+    /// after the round is what matters, not a guess about which entry moved.
+    fn refresh_timers(&self) {
+        let timers = match Repo::open(&self.database).and_then(|repo| active_timers(&repo)) {
+            Ok(timers) => timers,
+            Err(error) => {
+                eprintln!("timer notification: could not read open entries: {error}");
+                return;
+            }
+        };
+        if let Err(error) = timer_notification::sync(&self.app, &timers) {
+            eprintln!("timer notification: could not sync after a round: {error}");
+        }
     }
 
     /// This device's address, as an invite carries it.
@@ -166,6 +194,8 @@ impl SyncService {
             sync_once(&endpoint, addr, &mut repo, &topics).await
         });
         eprintln!("sync: sync_with done");
+        // The invite acceptance pulls history that can include a running timer.
+        self.refresh_timers();
         report
     }
 
@@ -265,6 +295,7 @@ impl SyncService {
             let endpoint = endpoint.clone();
             let status = self.status.clone();
             let pending = pending.clone();
+            let app = self.app.clone();
 
             self.runtime.spawn(async move {
                 let outcome: Result<little_log_sync::SyncReport, String> = async {
@@ -304,6 +335,16 @@ impl SyncService {
                 // The last peer to finish closes the round, so the UI can stop
                 // showing a spinner even when one peer was unreachable.
                 if pending.fetch_sub(1, Ordering::SeqCst) == 1 {
+                    // Every peer is done, so the log now has whatever timers the
+                    // other devices started or stopped. Re-derive the set rather
+                    // than trying to diff the round.
+                    if let Ok(timers) = Repo::open(&database).and_then(|repo| active_timers(&repo))
+                    {
+                        if let Err(error) = timer_notification::sync(&app, &timers) {
+                            eprintln!("timer notification: after sync: {error}");
+                        }
+                    }
+
                     let mut status = status
                         .lock()
                         .unwrap_or_else(|poisoned| poisoned.into_inner());

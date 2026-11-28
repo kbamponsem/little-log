@@ -8,6 +8,7 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import app.littlelog.timer.SessionTimers
 import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
@@ -27,6 +28,9 @@ class WidgetDrainWorker(context: Context, params: WorkerParameters) : CoroutineW
             // would be cancelled before Glance ever scheduled the redraw — which
             // is what left a tapped entry invisible until the app was opened.
             WidgetUpdater.updateAndWait(applicationContext)
+            // A queued Sleep or Wake Up still has to post/remove its timer even
+            // when the direct broadcast path had to fall back to this worker.
+            SessionTimers.sync(applicationContext)
             Result.success()
         } catch (error: Throwable) {
             // The queue is only cleared once the entries are in the database, so

@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import app.littlelog.timer.SessionTimers
 import app.littlelog.widget.WidgetPaths
 import app.littlelog.widget.WidgetUpdater
 
@@ -31,6 +32,9 @@ class FeedStopReceiver : BroadcastReceiver() {
                     val dataDir = WidgetPaths.root(app).absolutePath
                     val stopped = FeedBridge.nativeStop(dataDir)
                     FeedTimer.cancel(app)
+                    // Remove the current scheduler's notification too, if this
+                    // action came from a notification posted by an older build.
+                    SessionTimers.sync(app)
                     WidgetUpdater.refreshAndUpdate(app)
                     Log.i(
                         TAG,
