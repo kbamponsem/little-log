@@ -2,8 +2,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- The running-feed chronometer. Denying it only hides the timer. -->
+    <!-- The running-feed and running-sleep chronometers. Denying it only hides
+         the timers. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Android 16 Live Updates: lets the timer appear as a status-bar chip.
+         A normal permission; the user can still turn promotion off. -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
+    <!-- Restore a running timer after a reboot, when the system has dropped
+         every notification. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- Scanning an invite code. Not required: a link can always be pasted
          instead, so a device with no camera is still a full participant. -->
@@ -73,6 +80,29 @@
              our own PendingIntent sends it. -->
         <receiver
             android:name=".feed.FeedStopReceiver"
+            android:exported="false" />
+        <!-- Wake up action on the running-sleep notification. -->
+        <receiver
+            android:name=".sleep.SleepStopReceiver"
+            android:exported="false" />
+        <!-- Stop and Switch side on the feed/sleep timer notification. -->
+        <receiver
+            android:name=".timer.TimerActionReceiver"
+            android:exported="false" />
+        <!-- Re-derive a running timer after a reboot dropped the notification. -->
+        <receiver
+            android:name=".timer.BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+        <!-- Sleep and Wake Up taps from the home-screen widget. This is the
+             same broadcast path as the notification actions, which is reliable
+             even when the app is not open. -->
+        <receiver
+            android:name=".widget.WidgetActionReceiver"
             android:exported="false" />
     </application>
 </manifest>

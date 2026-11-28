@@ -7,14 +7,17 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import app.littlelog.feed.FeedTimer
+import app.littlelog.timer.SessionTimers
 import app.littlelog.widget.WidgetActions
 import app.littlelog.widget.WidgetPaths
 import app.littlelog.widget.WidgetUpdater
 
 class MainActivity : TauriActivity() {
     private val requestNotifications =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            // A timer may already be running; post it as soon as Android lets us.
+            if (granted) SessionTimers.syncAsync(this)
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -41,8 +44,8 @@ class MainActivity : TauriActivity() {
         // these touch SQLite and Glance, so keep them off the main thread.
         val app = applicationContext
         Thread({ WidgetUpdater.refreshAndUpdate(app) }, "widget-refresh").start()
-        // Leaving the app with a feed running is when the chronometer matters.
-        FeedTimer.syncAsync(this)
+        // Leaving the app with a feed or sleep running is when the timer matters.
+        SessionTimers.syncAsync(this)
     }
 
     /**
@@ -50,7 +53,7 @@ class MainActivity : TauriActivity() {
      * and the launcher's detailed actions open that section's sheet and write
      * the entry when the user saves it, so nothing is logged here — logging as
      * well would record the same event twice. The widget's Sleep and Wake Up
-     * log through the Glance callback and never reach this method.
+     * log through the broadcast receiver and never reach this method.
      */
     private fun handOffWidgetAction(intent: Intent?) {
         val action = intent?.getStringExtra(WidgetActions.KEY) ?: return
@@ -61,7 +64,7 @@ class MainActivity : TauriActivity() {
 
     /**
      * Android 13+ needs an explicit grant before an app may post anything.
-     * Denying it only costs the feeding timer; the rest of the app works.
+     * Denying it only costs the feed and sleep timers; the rest still works.
      */
     private fun askForNotificationPermission() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return

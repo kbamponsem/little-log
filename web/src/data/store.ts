@@ -191,15 +191,18 @@ export class AppStore extends Observable<AppStore> {
   }
 
   /**
-   * Re-read only when a feed that this WebView thought was running has been
-   * stopped elsewhere — the notification action writes the event without
-   * telling the page. A full `refresh()` on a timer would re-render every
-   * screen once a second-ish for no change, so compare first.
+   * Re-read only when a feed or sleep that this WebView thought was running
+   * has been stopped elsewhere — the notification actions write the event
+   * without telling the page. A full `refresh()` on a timer would re-render
+   * every screen for no change, so compare first.
    */
-  async refreshIfFeedStopped(): Promise<void> {
-    if (!this.runningFeed()) return;
+  async refreshIfSessionStopped(): Promise<void> {
+    const feed = this.runningFeed();
+    const sleep = this.runningSleep();
+    if (!feed && !sleep) return;
     const entries = await this.repo.listEntries();
-    if (entries.some((entry) => entry.kind === "feed" && !entry.ended_at)) return;
+    if (feed && entries.some((entry) => entry.kind === "feed" && !entry.ended_at)) return;
+    if (sleep && entries.some((entry) => entry.kind === "sleep" && !entry.ended_at)) return;
     this.setEntries(entries);
   }
 

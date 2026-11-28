@@ -7,6 +7,7 @@
 
 mod commands;
 mod settings;
+mod timer_notification;
 mod widget;
 
 use std::path::PathBuf;
@@ -14,6 +15,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use little_log_core::model::{Caregiver, Role};
+use little_log_core::timer::{active_timers, ActiveTimer};
 use little_log_core::Repo;
 use tauri::Manager;
 
@@ -73,7 +75,8 @@ impl AppState {
                 eprintln!("init: device_key done");
                 eprintln!("init: SyncService::start start");
                 let t = std::time::Instant::now();
-                match sync::SyncService::start(key.secret_bytes(), paths.database()) {
+                match sync::SyncService::start(key.secret_bytes(), paths.database(), (*app).clone())
+                {
                     Ok(service) => {
                         eprintln!("init: SyncService::start done {:?}", t.elapsed());
                         Some(Arc::new(service))
@@ -115,6 +118,20 @@ impl AppState {
             sync.sync_in_background();
             eprintln!("init: sync_in_background done");
         }
+
+        // A process restart (an app update, a reboot, Android reclaiming the
+        // process) loses the notifications, not the timers. Re-derive them from
+        // the open entries so the lock-screen clock is back before the user
+        // looks. This runs off the setup thread because the plugin call talks
+        // to Android and the activity may still be starting.
+        let app_handle = (*app).clone();
+        let timers = state.timers();
+        std::thread::spawn(move || {
+            if let Err(error) = timer_notification::sync(&app_handle, &timers) {
+                eprintln!("timer notification: restore failed: {error}");
+            }
+        });
+
         Ok(state)
     }
 
@@ -163,6 +180,29 @@ impl AppState {
         }
     }
 
+    /// The running feeds and sleeps, derived from open entries.
+    pub fn timers(&self) -> Vec<ActiveTimer> {
+        match active_timers(&self.repo()) {
+            Ok(timers) => timers,
+            Err(error) => {
+                // A notification is a convenience; failing to read the log for
+                // it must never stop the app from opening.
+                eprintln!("timer notification: could not derive timers: {error}");
+                Vec::new()
+            }
+        }
+    }
+
+    /// Make the notifications match the open entries.
+    ///
+    /// Used after a sync round and after a profile change, where the app knows
+    /// the entries may have moved but not which timer changed.
+    pub fn sync_timer_notifications(&self, app: &tauri::AppHandle) {
+        if let Err(error) = timer_notification::sync(app, &self.timers()) {
+            eprintln!("timer notification: could not sync: {error}");
+        }
+    }
+
     /// The app is local-first: a local owner exists before anyone signs in to
     /// anything.
     ///
@@ -191,6 +231,9 @@ pub fn run() {
     eprintln!("boot: rustls provider installed");
 
     tauri::Builder::default()
+        // Android running-timer notifications (feed and sleep). A no-op on
+        // desktop and iOS; see `timer_notification.rs`.
+        .plugin(timer_notification::plugin())
         // Export to file: the save dialog picks a path and grants the fs plugin
         // access to exactly that path, so no broad filesystem scope is needed.
         .plugin(tauri_plugin_fs::init())

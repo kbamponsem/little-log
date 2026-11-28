@@ -12,10 +12,9 @@ import androidx.glance.GlanceModifier
 import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.action.Action
-import androidx.glance.action.actionParametersOf
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
-import androidx.glance.appwidget.action.actionRunCallback
+import androidx.glance.appwidget.action.actionSendBroadcast
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.provideContent
@@ -46,9 +45,9 @@ import app.littlelog.R
  * The home-screen widget: four one-tap actions.
  *
  * Feed and Diaper open the app carrying that action, and `MainActivity` hands
- * it to the matching sheet. Sleep and Wake Up stay on the home screen: Glance
- * runs [LogActionCallback] in the app process, which applies the tap through
- * the Rust core and redraws without opening anything.
+ * it to the matching sheet. Sleep and Wake Up stay on the home screen: a
+ * broadcast reaches [WidgetActionReceiver] in the app process, which applies
+ * the tap through the Rust core and redraws without opening anything.
  *
  * The buttons carry the app's category colours — feed is the butter yellow,
  * sleep the periwinkle, diaper the pink, wake-up the mood green — so the widget
@@ -129,14 +128,14 @@ private fun WidgetContent(context: Context, state: WidgetState) {
                 label = "Sleep",
                 icon = R.drawable.ic_widget_sleep,
                 color = sleepTint,
-                action = if (state.isSleeping) null else logAction(WidgetActions.SLEEP),
+                action = if (state.isSleeping) null else logAction(context, WidgetActions.SLEEP),
             )
             Spacer(GlanceModifier.width(8.dp))
             button(
                 label = "Wake Up",
                 icon = R.drawable.ic_widget_wake,
                 color = wake,
-                action = if (state.isSleeping) logAction(WidgetActions.WAKE_UP) else null,
+                action = if (state.isSleeping) logAction(context, WidgetActions.WAKE_UP) else null,
             )
         }
     }
@@ -149,10 +148,16 @@ private fun openSheet(context: Context, action: String) =
             .putExtra(WidgetActions.KEY, action),
     )
 
-/** Apply a one-tap action in the background and redraw the widget. */
-private fun logAction(action: String) =
-    actionRunCallback<LogActionCallback>(
-        actionParametersOf(LogActionCallback.ACTION_KEY to action),
+/**
+ * Apply a one-tap action in the background and redraw the widget.
+ *
+ * This is an explicit broadcast, the same mechanism the feed notification's
+ * Stop action uses, rather than Glance's `actionRunCallback`.
+ */
+private fun logAction(context: Context, action: String) =
+    actionSendBroadcast(
+        Intent(context, WidgetActionReceiver::class.java)
+            .putExtra(WidgetActions.KEY, action),
     )
 
 /**

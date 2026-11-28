@@ -50,11 +50,11 @@ export class LlToday extends LLComponent {
   protected subscribe(): void {
     this.watch(store);
     this.checkinTimer = window.setInterval(() => this.renderCheckin(), 30_000);
-    // A feed can also be stopped from its notification, which writes the event
-    // without telling this WebView. Check for that, but only re-render when the
-    // running feed actually ended.
+    // A feed or sleep can also be stopped from its notification, which writes
+    // the event without telling this WebView. Check for that, but only
+    // re-render when the running session actually ended.
     this.feedPoll = window.setInterval(() => {
-      void store.refreshIfFeedStopped().catch(() => undefined);
+      void store.refreshIfSessionStopped().catch(() => undefined);
     }, 10_000);
     this.addEventListener("click", (event) => {
       const target = event.target as HTMLElement;
