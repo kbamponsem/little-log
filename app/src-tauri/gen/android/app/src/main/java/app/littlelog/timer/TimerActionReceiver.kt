@@ -16,8 +16,8 @@ import app.littlelog.widget.WidgetUpdater
  *
  * After the write the whole set is re-derived from the database. The
  * notification therefore cannot get out of step with the entry: a stop removes
- * it, a switch re-renders the side, and an entry already stopped elsewhere just
- * cancels the stale notification.
+ * it, a switch closes one side and starts the other as a new entry, and an
+ * entry already stopped elsewhere just cancels the stale notification.
  */
 class TimerActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
