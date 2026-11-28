@@ -234,7 +234,9 @@ fn apply(
             Some(running) => {
                 is_new = false;
                 let mut entry = running;
-                entry.ended_at = Some(occurred_at.max(entry.occurred_at + 60_000));
+                // A same-instant wake still has to be a valid sleep, but it must
+                // not be pushed a whole minute into the future.
+                entry.ended_at = Some(occurred_at.max(entry.occurred_at + 1));
                 entry
             }
             // Nothing to wake; a stale or repeated tap is harmless.
@@ -245,7 +247,7 @@ fn apply(
                 is_new = false;
                 let mut entry = running;
                 // A same-millisecond wake tap still has to be a valid sleep.
-                entry.ended_at = Some(occurred_at.max(entry.occurred_at + 60_000));
+                entry.ended_at = Some(occurred_at.max(entry.occurred_at + 1));
                 entry
             }
             None => Entry::new(EntryKind::Sleep, occurred_at),
@@ -532,7 +534,7 @@ mod tests {
     }
 
     #[test]
-    fn a_sleep_ending_before_it_started_is_clamped_to_a_minute() {
+    fn a_same_instant_wake_is_clamped_to_one_millisecond() {
         let path = temp_queue("clamp");
         let repo = Repo::open_in_memory().unwrap();
 
@@ -542,7 +544,8 @@ mod tests {
         )
         .unwrap();
         drain_into(&path, &repo, None).unwrap();
-        // Same-millisecond wake-up: the entry must still be valid.
+        // Same-millisecond wake-up: the entry must still be valid, without
+        // pushing its end into the future by a whole minute.
         append(
             &path,
             PendingAction::new(WidgetAction::SleepToggle, 100_000),
@@ -552,7 +555,7 @@ mod tests {
         assert_eq!(report.applied, 1);
 
         let sleep = repo.entries().unwrap().into_iter().next().unwrap();
-        assert_eq!(sleep.ended_at, Some(160_000));
+        assert_eq!(sleep.ended_at, Some(100_001));
     }
 
     #[test]

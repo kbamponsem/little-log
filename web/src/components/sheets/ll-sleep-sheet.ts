@@ -67,9 +67,30 @@ export class LlSleepSheet extends LLSheet {
     const to = this.field("to") || tv(Date.now());
     const note = this.field("note");
 
-    let started = setT(live ? live.occurred_at : Date.now(), from);
-    const ended = capNow(setT(Date.now(), to));
-    if (ended <= started) started -= 24 * 60 * 60 * 1000;
+    let started = live && from === tv(live.occurred_at)
+      ? live.occurred_at
+      : setT(live ? live.occurred_at : Date.now(), from);
+    let ended = capNow(setT(Date.now(), to));
+    if (live) {
+      // A running sleep cannot wake before it started. The time inputs only
+      // carry HH:MM, so a wake in the start's own minute truncates to the same
+      // instant; use the moment of saving instead of rolling the start back a
+      // whole day (which used to turn a 30-second nap into 24 hours).
+      if (ended < started) {
+        this.error("Wake time must be after the sleep started.");
+        return;
+      }
+      if (ended === started) {
+        ended = Math.max(Date.now(), started + 1000);
+      }
+    } else if (ended < started) {
+      // A past nap whose end clock time is earlier than its start crossed
+      // midnight (23:50 -> 00:10).
+      started -= 24 * 60 * 60 * 1000;
+    } else if (ended === started) {
+      this.error("Wake time must be after the sleep started.");
+      return;
+    }
 
     const noteValue = note || null;
     const target = live
