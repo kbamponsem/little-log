@@ -172,14 +172,9 @@ pub fn stop_timer_entry(paths: &WidgetPaths, entry_id: &str) -> Result<bool> {
     let key = repo.device_key()?;
     let mut clock = repo.clock(key.id())?;
     let now = now_millis();
-    // The same clamp the widget uses: a same-millisecond stop still has to be
-    // a valid entry, and a sleep is represented in whole minutes.
-    let minimum = if entry.kind == EntryKind::Sleep {
-        60_000
-    } else {
-        1
-    };
-    entry.ended_at = Some(now.max(entry.occurred_at + minimum));
+    // Validation only wants the end after the start. A 60-second floor used to
+    // push a quick wake into the future, which then overlapped the next sleep.
+    entry.ended_at = Some(now.max(entry.occurred_at + 1));
     entry.updated_at = now;
     repo.record_new_entry(&key, &mut clock, &entry)?;
     Ok(true)
@@ -715,6 +710,41 @@ mod tests {
         assert_eq!(events[0].kind, EventKind::Create);
         assert_eq!(events[1].kind, EventKind::Edit);
         assert!(repo.entry(&sleep_id).unwrap().unwrap().ended_at.is_some());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_quick_wake_ends_now_not_a_minute_later() {
+        let root = std::env::temp_dir().join(format!("little-log-quick-wake-{}", now_millis()));
+        let paths = WidgetPaths::new(&root);
+        let before = now_millis();
+        let sleep_id;
+
+        {
+            let repo = paths.open_repo().unwrap();
+            let baby_id = repo.ensure_baby("Baby").unwrap().id;
+            let key = repo.device_key().unwrap();
+            let mut clock = repo.clock(key.id()).unwrap();
+            let mut sleep = Entry::new(EntryKind::Sleep, before);
+            sleep.baby_id = baby_id;
+            sleep_id = repo.record_new_entry(&key, &mut clock, &sleep).unwrap().id;
+        }
+
+        assert!(stop_timer_entry(&paths, &sleep_id).unwrap());
+        let after = now_millis();
+        let stored = paths
+            .open_repo()
+            .unwrap()
+            .entry(&sleep_id)
+            .unwrap()
+            .unwrap();
+        let ended = stored.ended_at.expect("the sleep is ended");
+        assert!(ended <= after, "a wake must never be logged in the future");
+        assert!(
+            ended < before + 60_000,
+            "there is no one-minute floor to pad the wake"
+        );
 
         let _ = std::fs::remove_dir_all(&root);
     }
